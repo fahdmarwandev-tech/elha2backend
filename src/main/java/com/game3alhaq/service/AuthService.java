@@ -91,6 +91,29 @@ public class AuthService {
         return buildAuthTokenResponse(user, accessToken, refreshToken.getToken());
     }
 
+    public AuthResponses.AuthTokenResponse refresh(AuthRequests.RefreshTokenRequest request) {
+        RefreshToken refreshToken = refreshTokenRepository.findByToken(request.getRefreshToken())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired refresh token"));
+
+        if (Boolean.TRUE.equals(refreshToken.getIsRevoked()) || refreshToken.getExpiryDate().isBefore(OffsetDateTime.now())) {
+            refreshTokenRepository.delete(refreshToken);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token has expired");
+        }
+
+        User user = refreshToken.getUser();
+        CustomUserDetails userDetails = new CustomUserDetails(user);
+        String accessToken = jwtService.generateToken(userDetails);
+
+        return buildAuthTokenResponse(user, accessToken, refreshToken.getToken());
+    }
+
+    public void logout(AuthRequests.RefreshTokenRequest request) {
+        if (request != null && request.getRefreshToken() != null) {
+            refreshTokenRepository.findByToken(request.getRefreshToken())
+                    .ifPresent(refreshTokenRepository::delete);
+        }
+    }
+
     private RefreshToken createRefreshToken(User user) {
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)

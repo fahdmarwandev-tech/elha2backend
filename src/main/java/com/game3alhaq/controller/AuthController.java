@@ -15,9 +15,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping({"/auth", "/api/auth"})
 @RequiredArgsConstructor
-@Tag(name = "Authentication", description = "Endpoints for user registration and login")
+@Tag(name = "Authentication", description = "Endpoints for user registration, login, and token management")
 public class AuthController {
 
     private final AuthService authService;
@@ -32,5 +32,20 @@ public class AuthController {
     @Operation(summary = "Sign in / Login", description = "Authenticate with phone number (or email) and password to get a JWT access token.")
     public ResponseEntity<AuthResponses.AuthTokenResponse> login(@Valid @RequestBody AuthRequests.LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Refresh JWT access token", description = "Exchange a valid refresh token for a new JWT access token.")
+    public ResponseEntity<AuthResponses.AuthTokenResponse> refresh(@Valid @RequestBody AuthRequests.RefreshTokenRequest request) {
+        return ResponseEntity.ok(authService.refresh(request));
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "Logout user", description = "Revoke the refresh token on the server.")
+    public ResponseEntity<Void> logout(@RequestBody(required = false) AuthRequests.RefreshTokenRequest request) {
+        if (request != null) {
+            authService.logout(request);
+        }
+        return ResponseEntity.noContent().build();
     }
 }
