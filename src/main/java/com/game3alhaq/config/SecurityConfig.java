@@ -37,6 +37,7 @@ public class SecurityConfig {
     private static final String[] PUBLIC_WHITE_LIST = {
             "/auth/**",
             "/api/auth/**",
+            "/h2-console/**",
             "/v3/api-docs/**",
             "/v3/api-docs",
             "/swagger-ui/**",
@@ -77,6 +78,7 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
+                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_WHITE_LIST).permitAll()
