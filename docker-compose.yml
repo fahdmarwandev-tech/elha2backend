@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:latest
+    image: postgres:16-alpine
     container_name: game3alhaq-db
     environment:
       - POSTGRES_USER=postgres
@@ -9,8 +9,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - game3alhaq_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  game3alhaq_pgdata:
