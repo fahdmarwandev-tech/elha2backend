@@ -37,6 +37,7 @@ public class SecurityConfig {
     private static final String[] PUBLIC_WHITE_LIST = {
             "/auth/**",
             "/api/auth/**",
+            "/api/v1/videos/**",
             "/h2-console/**",
             "/v3/api-docs/**",
             "/v3/api-docs",
