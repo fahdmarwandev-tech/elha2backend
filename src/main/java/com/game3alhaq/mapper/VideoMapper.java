@@ -12,8 +12,12 @@ public class VideoMapper {
 
         return VideoResponse.builder()
                 .id(video.getId())
+                .videoSourceType(video.getVideoSourceType())
                 .youtubeUrl(video.getYoutubeUrl())
                 .youtubeId(video.getYoutubeId())
+                .fileUrl(video.getFileUrl())
+                .fileName(video.getFileName())
+                .fileSize(video.getFileSize())
                 .title(video.getTitle())
                 .description(video.getDescription())
                 .category(video.getCategory())

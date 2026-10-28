@@ -15,8 +15,12 @@ public class MediaResponses {
     @AllArgsConstructor
     public static class VideoResponse {
         private Long id;
+        private String videoSourceType; // "YOUTUBE" or "LOCAL"
         private String youtubeUrl;
         private String youtubeId;
+        private String fileUrl;
+        private String fileName;
+        private Long fileSize;
         private String title;
         private String description;
         private String category;

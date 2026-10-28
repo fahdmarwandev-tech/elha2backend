@@ -1,6 +1,5 @@
 package com.game3alhaq.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,9 +12,13 @@ public class MediaRequests {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CreateVideoRequest {
+        @Builder.Default
+        private String videoSourceType = "YOUTUBE"; // "YOUTUBE" or "LOCAL"
 
-        @NotBlank(message = "YouTube URL is required")
         private String youtubeUrl;
+        private String fileUrl;
+        private String fileName;
+        private Long fileSize;
 
         private String title;
         private String description;

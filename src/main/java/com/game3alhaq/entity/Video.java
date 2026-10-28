@@ -20,11 +20,27 @@ public class Video {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "youtube_url", nullable = false, length = 500)
+    /**
+     * Source type: "YOUTUBE" or "LOCAL"
+     */
+    @Column(name = "video_source_type", length = 20, nullable = false)
+    @Builder.Default
+    private String videoSourceType = "YOUTUBE";
+
+    @Column(name = "youtube_url", length = 500)
     private String youtubeUrl;
 
-    @Column(name = "youtube_id", nullable = false, length = 50)
+    @Column(name = "youtube_id", length = 50)
     private String youtubeId;
+
+    @Column(name = "file_url", length = 500)
+    private String fileUrl;
+
+    @Column(name = "file_name", length = 255)
+    private String fileName;
+
+    @Column(name = "file_size")
+    private Long fileSize;
 
     @Column(name = "title", nullable = false, length = 255)
     private String title;

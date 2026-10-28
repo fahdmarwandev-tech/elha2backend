@@ -38,6 +38,7 @@ public class SecurityConfig {
             "/auth/**",
             "/api/auth/**",
             "/api/v1/videos/**",
+            "/uploads/**",
             "/h2-console/**",
             "/v3/api-docs/**",
             "/v3/api-docs",
