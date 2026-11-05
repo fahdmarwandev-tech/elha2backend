@@ -10,6 +10,7 @@ import com.game3alhaq.repository.RefreshTokenRepository;
 import com.game3alhaq.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -33,6 +34,12 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+
+    @Value("${jwt.access-token.expiration:900000}")
+    private long accessTokenExpiration;
+
+    @Value("${jwt.refresh-token.expiration-days:14}")
+    private int refreshTokenExpirationDays;
 
     public AuthResponses.AuthTokenResponse register(AuthRequests.RegisterRequest request) {
         log.info("Processing registration for phone: {}", request.getPhone());
@@ -100,6 +107,10 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Refresh token has expired");
         }
 
+        // Renew refresh token expiry for another 14 days on active refresh
+        refreshToken.setExpiryDate(OffsetDateTime.now().plusDays(refreshTokenExpirationDays));
+        refreshTokenRepository.save(refreshToken);
+
         User user = refreshToken.getUser();
         CustomUserDetails userDetails = new CustomUserDetails(user);
         String accessToken = jwtService.generateToken(userDetails);
@@ -118,7 +129,7 @@ public class AuthService {
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
                 .token(UUID.randomUUID().toString())
-                .expiryDate(OffsetDateTime.now().plusDays(7))
+                .expiryDate(OffsetDateTime.now().plusDays(refreshTokenExpirationDays))
                 .isRevoked(false)
                 .build();
         return refreshTokenRepository.save(refreshToken);
@@ -139,7 +150,7 @@ public class AuthService {
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
                 .tokenType("Bearer")
-                .expiresIn(86400L) // 24 hours
+                .expiresIn(accessTokenExpiration / 1000) // 15 minutes in seconds (900s)
                 .user(userResponse)
                 .build();
     }

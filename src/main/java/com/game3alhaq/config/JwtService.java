@@ -22,8 +22,12 @@ public class JwtService {
     @Value("${jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}")
     private String secretKey;
 
-    @Value("${jwt.access-token.expiration:86400000}") // Default 24 hours
+    @Value("${jwt.access-token.expiration:900000}") // Default 15 minutes (900,000 ms)
     private long accessTokenExpiration;
+
+    public long getAccessTokenExpiration() {
+        return accessTokenExpiration;
+    }
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
