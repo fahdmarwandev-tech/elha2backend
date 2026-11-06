@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: game3alhaq-dev-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-game3alhaq_dev_db}
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - game3alhaq_dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-game3alhaq_dev_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/abdos/elha2backend:dev}
+    container_name: game3alhaq-dev-backend
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  game3alhaq_dev_postgres_data:

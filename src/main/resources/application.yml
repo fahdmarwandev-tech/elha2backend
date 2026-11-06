@@ -1,36 +1,44 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
     name: game3-al-haq-backend
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/game3alhaq_db}
-    username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    url: ${DB_LOCAL_URL:${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/game3alhaq_db}}
+    username: ${DB_LOCAL_USERNAME:${SPRING_DATASOURCE_USERNAME:postgres}}
+    password: ${DB_LOCAL_PASSWORD:${SPRING_DATASOURCE_PASSWORD:postgres}}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.postgresql.Driver}
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: true
     properties:
       hibernate:
         format_sql: true
 
-  flyway:
-    enabled: false
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
 
   servlet:
     multipart:
       max-file-size: 500MB
       max-request-size: 500MB
 
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 # Springdoc OpenAPI / Swagger UI
 springdoc:
@@ -43,10 +51,37 @@ springdoc:
     operations-sorter: alpha
     display-request-duration: true
 
-# JWT Configuration (Modeled after resaporirealbackend)
+# JWT Configuration
 jwt:
   secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
   access-token:
     expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900000} # 15 minutes in milliseconds
   refresh-token:
     expiration-days: ${JWT_REFRESH_TOKEN_EXPIRATION_DAYS:14} # 14 days
+
+# App File Upload Configuration
+app:
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+    base-url: ${UPLOAD_BASE_URL:/uploads}
+
+# CORS Configuration
+cors:
+  allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000}
+
+# PayPal Configuration
+paypal:
+  client-id: ${PAYPAL_CLIENT_ID:}
+  client-secret: ${PAYPAL_CLIENT_SECRET:}
+  mode: ${PAYPAL_MODE:sandbox}
+
+# YouTube Configuration
+youtube:
+  api-key: ${YOUTUBE_API_KEY:}
+
+# Actuator Endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

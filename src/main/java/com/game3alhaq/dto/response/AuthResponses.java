@@ -42,6 +42,6 @@ public class AuthResponses {
     @AllArgsConstructor
     public static class MessageResponse {
         private String message;
-        private boolean success;
+        private Boolean success;
     }
 }

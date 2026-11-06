@@ -31,4 +31,18 @@ public class MediaResponses {
         private Boolean isFeatured;
         private OffsetDateTime createdAt;
     }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CategoryResponse {
+        private Long id;
+        private String name;
+        private String slug;
+        private String description;
+        private Integer sortOrder;
+        private Boolean isActive;
+        private OffsetDateTime createdAt;
+    }
 }

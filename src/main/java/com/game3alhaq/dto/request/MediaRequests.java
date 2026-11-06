@@ -1,5 +1,6 @@
 package com.game3alhaq.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -43,5 +44,32 @@ public class MediaRequests {
         private String viewsCount;
         private String customPoster;
         private Boolean isFeatured;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CreateCategoryRequest {
+        @NotBlank(message = "Category name is required")
+        private String name;
+
+        @NotBlank(message = "Category slug is required")
+        private String slug;
+
+        private String description;
+        private Integer sortOrder;
+        private Boolean isActive;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class UpdateCategoryRequest {
+        private String name;
+        private String description;
+        private Integer sortOrder;
+        private Boolean isActive;
     }
 }

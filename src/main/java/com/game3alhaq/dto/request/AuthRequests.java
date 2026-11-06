@@ -50,4 +50,29 @@ public class AuthRequests {
         @NotBlank(message = "Refresh token is required")
         private String refreshToken;
     }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ForgotPasswordRequest {
+        @NotBlank(message = "Identifier (phone or email) is required")
+        private String identifier;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ResetPasswordRequest {
+        @NotBlank(message = "Identifier is required")
+        private String identifier;
+
+        @NotBlank(message = "OTP code is required")
+        private String otpCode;
+
+        @NotBlank(message = "New password is required")
+        @Size(min = 6, message = "Password must be at least 6 characters")
+        private String newPassword;
+    }
 }

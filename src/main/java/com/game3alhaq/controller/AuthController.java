@@ -48,4 +48,18 @@ public class AuthController {
         }
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/forgot-password")
+    @Operation(summary = "Request password reset OTP", description = "Generates and sends an OTP to user's email if available.")
+    public ResponseEntity<AuthResponses.MessageResponse> forgotPassword(
+            @Valid @RequestBody AuthRequests.ForgotPasswordRequest request) {
+        return ResponseEntity.ok(authService.forgotPassword(request));
+    }
+
+    @PostMapping("/reset-password")
+    @Operation(summary = "Reset password using OTP", description = "Resets user password using the provided OTP.")
+    public ResponseEntity<AuthResponses.MessageResponse> resetPassword(
+            @Valid @RequestBody AuthRequests.ResetPasswordRequest request) {
+        return ResponseEntity.ok(authService.resetPassword(request));
+    }
 }

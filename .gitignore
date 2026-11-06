@@ -41,3 +41,7 @@ build/
 uploads/*
 !uploads/.gitkeep
 
+### Environment Variables ###
+.env
+.env.*
+!.env.example
