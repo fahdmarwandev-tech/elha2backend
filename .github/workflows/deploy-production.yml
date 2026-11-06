@@ -79,6 +79,6 @@ jobs:
           script: |
             mkdir -p /opt/game3alhaq/production
             cd /opt/game3alhaq/production
-            docker compose -f docker-compose.prod.yml pull backend || docker-compose -f docker-compose.prod.yml pull backend
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans || docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker compose -p game3alhaq-prod -f docker-compose.prod.yml pull backend
+            docker compose -p game3alhaq-prod -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f

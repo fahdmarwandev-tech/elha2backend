@@ -1,3 +1,5 @@
+name: game3alhaq-dev
+
 services:
   db:
     image: postgres:16-alpine
@@ -18,11 +20,15 @@ services:
       retries: 5
 
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/abdos/elha2backend:dev}
+    image: ${BACKEND_IMAGE:-ghcr.io/fahdmarwandev-tech/elha2backend:dev}
     container_name: game3alhaq-dev-backend
     restart: always
     env_file:
       - .env
+    environment:
+      - DB_LOCAL_URL=jdbc:postgresql://db:5432/${POSTGRES_DB:-game3alhaq_dev_db}
+      - DB_LOCAL_USERNAME=${POSTGRES_USER:-postgres}
+      - DB_LOCAL_PASSWORD=${POSTGRES_PASSWORD:-postgres}
     ports:
       - "8083:8080"
     volumes:
