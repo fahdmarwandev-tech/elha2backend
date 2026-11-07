@@ -18,10 +18,13 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String identifier) throws UsernameNotFoundException {
-        // Can look up user by phone or email
-        User user = userRepository.findByPhone(identifier)
-                .or(() -> userRepository.findByEmail(identifier))
-                .orElseThrow(() -> new UsernameNotFoundException("User not found with phone/email: " + identifier));
+        if (identifier == null || identifier.isBlank()) {
+            throw new UsernameNotFoundException("Identifier cannot be empty");
+        }
+        String cleanIdentifier = identifier.trim();
+        User user = userRepository.findByPhone(cleanIdentifier)
+                .or(() -> userRepository.findByEmailIgnoreCase(cleanIdentifier))
+                .orElseThrow(() -> new UsernameNotFoundException("User not found with phone/email: " + cleanIdentifier));
 
         return new CustomUserDetails(user);
     }

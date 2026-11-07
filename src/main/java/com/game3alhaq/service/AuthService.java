@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -147,7 +148,7 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Phone number is already registered");
         }
         if (request.getEmail() != null && !request.getEmail().isBlank()
-                && userRepository.existsByEmail(request.getEmail())) {
+                && userRepository.existsByEmailIgnoreCase(request.getEmail().trim())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered");
         }
     }
@@ -156,7 +157,7 @@ public class AuthService {
         return User.builder()
                 .fullName(req.getFullName().trim())
                 .phone(req.getPhone().trim())
-                .email(req.getEmail() != null ? req.getEmail().trim() : null)
+                .email(req.getEmail() != null && !req.getEmail().isBlank() ? req.getEmail().trim().toLowerCase() : null)
                 .passwordHash(passwordEncoder.encode(req.getPassword()))
                 .role("ROLE_USER")
                 .isActive(true)
@@ -165,15 +166,16 @@ public class AuthService {
 
     private void authenticateUser(String identifier, String password) {
         try {
-            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(identifier, password));
-        } catch (BadCredentialsException ex) {
+            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(identifier.trim(), password));
+        } catch (AuthenticationException ex) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid phone/email or password");
         }
     }
 
     private User findUserByIdentifier(String identifier) {
-        return userRepository.findByPhone(identifier)
-                .or(() -> userRepository.findByEmail(identifier))
+        String clean = identifier.trim();
+        return userRepository.findByPhone(clean)
+                .or(() -> userRepository.findByEmailIgnoreCase(clean))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
@@ -199,8 +201,9 @@ public class AuthService {
     }
 
     private void updateUserPassword(UserOtp otp, String identifier, String newPassword) {
-        User user = (otp.getUser() != null) ? otp.getUser() : userRepository.findByPhone(identifier)
-                .or(() -> userRepository.findByEmail(identifier))
+        String clean = identifier.trim();
+        User user = (otp.getUser() != null) ? otp.getUser() : userRepository.findByPhone(clean)
+                .or(() -> userRepository.findByEmailIgnoreCase(clean))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "المستخدم غير موجود"));
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));

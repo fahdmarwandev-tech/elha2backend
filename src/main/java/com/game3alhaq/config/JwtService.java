@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -89,6 +91,13 @@ public class JwtService {
 
     private SecretKey getSignInKey() {
         byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < 32) {
+            try {
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                keyBytes = md.digest(keyBytes);
+            } catch (NoSuchAlgorithmException ignored) {
+            }
+        }
         return Keys.hmacShaKeyFor(keyBytes);
     }
 }
