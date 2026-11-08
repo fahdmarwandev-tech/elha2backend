@@ -33,6 +33,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class BookingService {
 
+    public static final int DHUHR_START_HOUR = 12;
     public static final int MAGHRIB_CUTOFF_HOUR = 18;
     public static final int AZA_DAYS_COUNT = 3;
 
@@ -48,9 +49,13 @@ public class BookingService {
     public BookingInitiationResponse createBooking(CreateBookingRequest req) {
         Hall hall = getActiveHall(req.getHallId());
         validateTiming(hall, req.getBookingType(), req.getStartHour(), req.getEndHour());
+        int effectiveStartHour = isAzaBooking(req.getBookingType()) ? DHUHR_START_HOUR : req.getStartHour();
+        int effectiveEndHour = isAzaBooking(req.getBookingType()) ? MAGHRIB_CUTOFF_HOUR : req.getEndHour();
+        req.setStartHour(effectiveStartHour);
+        req.setEndHour(effectiveEndHour);
         int daysCount = resolveDaysCount(req.getBookingType());
         LocalDate endDate = req.getEventDate().plusDays(daysCount - 1L);
-        validateDateRangeAvailability(hall, req.getEventDate(), endDate, req.getStartHour(), req.getEndHour());
+        validateDateRangeAvailability(hall, req.getEventDate(), endDate, effectiveStartHour, effectiveEndHour);
         User user = resolveCurrentUser();
         Booking booking = initBookingFromRequest(hall, user, req, daysCount, endDate);
         booking.setStatus("PENDING_PAYMENT");
@@ -58,7 +63,9 @@ public class BookingService {
         Booking saved = bookingRepository.save(booking);
         Payment payment = paymentService.createPayPalOrder(saved);
         return new BookingInitiationResponse(
-                bookingMapper.toResponse(saved), payment.getPaypalOrderId(), payment.getApprovalUrl());
+                enrichBookingResponse(saved, bookingMapper.toResponse(saved)),
+                payment.getPaypalOrderId(),
+                payment.getApprovalUrl());
     }
 
     @Transactional
@@ -66,16 +73,20 @@ public class BookingService {
     public BookingResponse adminCreateBooking(AdminCreateBookingRequest req) {
         Hall hall = getActiveHall(req.getHallId());
         validateTiming(hall, req.getBookingType(), req.getStartHour(), req.getEndHour());
+        int effectiveStartHour = isAzaBooking(req.getBookingType()) ? DHUHR_START_HOUR : req.getStartHour();
+        int effectiveEndHour = isAzaBooking(req.getBookingType()) ? MAGHRIB_CUTOFF_HOUR : req.getEndHour();
+        req.setStartHour(effectiveStartHour);
+        req.setEndHour(effectiveEndHour);
         int daysCount = resolveDaysCount(req.getBookingType());
         LocalDate endDate = req.getEventDate().plusDays(daysCount - 1L);
-        validateDateRangeAvailability(hall, req.getEventDate(), endDate, req.getStartHour(), req.getEndHour());
+        validateDateRangeAvailability(hall, req.getEventDate(), endDate, effectiveStartHour, effectiveEndHour);
         Booking booking = initBookingFromAdmin(hall, req, daysCount, endDate);
         boolean skip = Boolean.TRUE.equals(req.getSkipPayment());
         booking.setStatus(skip ? "CONFIRMED" : "PENDING_PAYMENT");
         booking.setPaymentExpiresAt(skip ? null : OffsetDateTime.now().plusMinutes(15));
         Booking saved = bookingRepository.save(booking);
         handleAdminPayment(saved, skip);
-        return bookingMapper.toResponse(saved);
+        return enrichBookingResponse(saved, bookingMapper.toResponse(saved));
     }
 
     private void handleAdminPayment(Booking saved, boolean skip) {
@@ -91,7 +102,7 @@ public class BookingService {
         Booking booking = bookingRepository.findByCodeWithDetails(code)
                 .or(() -> bookingRepository.findByCode(code))
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "code", code));
-        return bookingMapper.toResponse(booking);
+        return enrichBookingResponse(booking, bookingMapper.toResponse(booking));
     }
 
     @Transactional(readOnly = true)
@@ -99,7 +110,7 @@ public class BookingService {
         Booking booking = bookingRepository.findByIdWithDetails(id)
                 .or(() -> bookingRepository.findById(id))
                 .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", id));
-        return bookingMapper.toResponse(booking);
+        return enrichBookingResponse(booking, bookingMapper.toResponse(booking));
     }
 
     @Transactional(readOnly = true)
@@ -108,7 +119,7 @@ public class BookingService {
                 .or(() -> userRepository.findByEmail(userPhoneOrEmail)).orElse(null);
         Long userId = user != null ? user.getId() : null;
         List<Booking> bookings = bookingRepository.findUserBookings(userId, userPhoneOrEmail);
-        return bookingMapper.toResponseList(bookings);
+        return enrichBookingResponseList(bookings, bookingMapper.toResponseList(bookings));
     }
 
     @Transactional(readOnly = true)
@@ -116,7 +127,7 @@ public class BookingService {
     public List<BookingResponse> getAllBookingsAdmin(
             String status, String bookingType, LocalDate fromDate, LocalDate toDate) {
         List<Booking> bookings = bookingRepository.findAdminBookings(status, bookingType, fromDate, toDate);
-        return bookingMapper.toResponseList(bookings);
+        return enrichBookingResponseList(bookings, bookingMapper.toResponseList(bookings));
     }
 
     @Transactional
@@ -128,7 +139,7 @@ public class BookingService {
         validateStatusTransition(newStatus);
         booking.setStatus(newStatus);
         Booking saved = bookingRepository.save(booking);
-        return bookingMapper.toResponse(saved);
+        return enrichBookingResponse(saved, bookingMapper.toResponse(saved));
     }
 
     @Transactional
@@ -168,9 +179,12 @@ public class BookingService {
                     "Booking hours (%d-%d) outside hall operating hours (%d-%d)",
                     startHour, endHour, open, close));
         }
-        if (isAzaBooking(bookingType) && endHour > MAGHRIB_CUTOFF_HOUR) {
-            throw new IllegalArgumentException(
-                    "لا يمكن حجز مجلس عزاء بعد وقت أذان المغرب (" + MAGHRIB_CUTOFF_HOUR + ":00)");
+        if (isAzaBooking(bookingType)) {
+            if (startHour < DHUHR_START_HOUR || endHour > MAGHRIB_CUTOFF_HOUR) {
+                throw new IllegalArgumentException(
+                        "مواعيد حجز العزاء متاحة فقط من وقت صلاة الظهر (" + DHUHR_START_HOUR
+                        + ":00) حتى وقت أذان المغرب (" + MAGHRIB_CUTOFF_HOUR + ":00)");
+            }
         }
     }
 
@@ -188,6 +202,9 @@ public class BookingService {
 
     private void validateDateRangeAvailability(
             Hall hall, LocalDate startDate, LocalDate endDate, int startHour, int endHour) {
+        if (startDate != null && startDate.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("لا يمكن الحجز في تاريخ فائت (" + startDate + ")");
+        }
         for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
             validateBlackouts(hall, date, startHour, endHour);
             validateConflictsWithBuffer(hall, date, startHour, endHour);
@@ -278,5 +295,53 @@ public class BookingService {
             }
         }
         return "DAR-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    }
+
+    private BookingResponse enrichBookingResponse(Booking booking, BookingResponse resp) {
+        if (resp == null || booking == null) {
+            return resp;
+        }
+        boolean isAza = isAzaBooking(booking.getBookingType());
+        LocalDate start = booking.getEventDate() != null ? booking.getEventDate() : resp.getEventDate();
+        if (start != null) {
+            LocalDate end = booking.getEndDate();
+            if (end == null || end.isBefore(start) || (isAza && end.isEqual(start))) {
+                end = isAza ? start.plusDays(AZA_DAYS_COUNT - 1L) : start;
+            }
+            List<LocalDate> reservedDates = new ArrayList<>();
+            for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+                reservedDates.add(d);
+            }
+            resp.setEventDate(start);
+            resp.setEndDate(end);
+            resp.setReservedDates(reservedDates);
+            resp.setDaysCount(isAza ? AZA_DAYS_COUNT : Math.max(1, reservedDates.size()));
+        }
+        int sh = booking.getStartHour() != null ? booking.getStartHour() : (isAza ? DHUHR_START_HOUR : 18);
+        int eh = booking.getEndHour() != null ? booking.getEndHour() : (isAza ? MAGHRIB_CUTOFF_HOUR : 22);
+        resp.setEventLabel(isAza ? "عزاء (3 أيام)" : "عقد قران");
+        if (isAza && sh == DHUHR_START_HOUR && eh == MAGHRIB_CUTOFF_HOUR) {
+            resp.setFormattedTimeRange("من 12:00 ظهراً (الظهر) إلى 06:00 مساءً (المغرب)");
+        } else {
+            resp.setFormattedTimeRange("من " + formatHourAr(sh) + " إلى " + formatHourAr(eh));
+        }
+        return resp;
+    }
+
+    private List<BookingResponse> enrichBookingResponseList(List<Booking> bookings, List<BookingResponse> responses) {
+        if (responses == null || bookings == null) {
+            return responses;
+        }
+        for (int i = 0; i < Math.min(bookings.size(), responses.size()); i++) {
+            enrichBookingResponse(bookings.get(i), responses.get(i));
+        }
+        return responses;
+    }
+
+    private String formatHourAr(int hour) {
+        int h12 = hour % 12;
+        if (h12 == 0) h12 = 12;
+        String period = (hour >= 12 && hour < 24) ? "م" : "ص";
+        return String.format("%02d:00 %s", h12, period);
     }
 }

@@ -69,6 +69,8 @@ public class HallResponses {
         private Integer bufferHours;
         private Integer openHour;
         private Integer closeHour;
+        private Integer dhuhrHour;
+        private String dhuhrTime;
         private Integer maghribHour;
         private String maghribTime;
         private List<DayAvailabilityResponse> days;
@@ -84,6 +86,7 @@ public class HallResponses {
         private Integer dayNumber;
         private String status; // AVAILABLE, PARTIALLY_BOOKED, FULLY_BOOKED
         private List<HourSlotStatus> hours;
+        private List<DayReservationSummary> reservations;
     }
 
     @Data
@@ -94,5 +97,31 @@ public class HallResponses {
         private Integer hour;
         private String formattedHour;
         private String status; // AVAILABLE, BOOKED, BUFFER, BLACKOUT
+        private String bookingType; // "3aza" or "katbketab" when BOOKED/BUFFER
+        private String eventLabel;  // "عزاء" or "عقد قران"
+        private String bookingCode;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class DayReservationSummary {
+        private Long bookingId;
+        private String code;
+        private String fullName;
+        private String bookingType; // "3aza" or "katbketab"
+        private String eventLabel;  // "عزاء (3 أيام)" or "عقد قران"
+        @JsonFormat(pattern = "yyyy-MM-dd")
+        private LocalDate eventDate;
+        @JsonFormat(pattern = "yyyy-MM-dd")
+        private LocalDate endDate;
+        private List<String> reservedDates; // All 3 dates for 3aza, or 1 date for katbketab
+        private Integer daysCount;
+        private Integer dayIndex; // 1, 2, or 3
+        private Integer startHour;
+        private Integer endHour;
+        private String formattedTimeRange;
+        private String status;
     }
 }

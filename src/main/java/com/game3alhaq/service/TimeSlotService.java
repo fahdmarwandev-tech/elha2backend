@@ -24,6 +24,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TimeSlotService {
 
+    public static final int DEFAULT_DHUHR_HOUR = 12;
+    public static final String DEFAULT_DHUHR_TIME = "12:15";
     public static final int DEFAULT_MAGHRIB_HOUR = 18;
     public static final String DEFAULT_MAGHRIB_TIME = "18:05";
 
@@ -66,6 +68,8 @@ public class TimeSlotService {
                 .bufferHours(hall.getBufferHours())
                 .openHour(hall.getOpenHour() != null ? hall.getOpenHour() : 0)
                 .closeHour(hall.getCloseHour() != null ? hall.getCloseHour() : 24)
+                .dhuhrHour(DEFAULT_DHUHR_HOUR)
+                .dhuhrTime(DEFAULT_DHUHR_TIME)
                 .maghribHour(DEFAULT_MAGHRIB_HOUR)
                 .maghribTime(DEFAULT_MAGHRIB_TIME)
                 .days(days)
@@ -96,7 +100,7 @@ public class TimeSlotService {
                 continue;
             }
             LocalDate from = b.getEventDate().isBefore(startDate) ? startDate : b.getEventDate();
-            LocalDate rawEnd = b.getEndDate() != null ? b.getEndDate() : b.getEventDate();
+            LocalDate rawEnd = resolveBookingEndDate(b);
             LocalDate to = rawEnd.isAfter(endDate) ? endDate : rawEnd;
             for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
                 map.computeIfAbsent(d, k -> new ArrayList<>()).add(b);
@@ -105,39 +109,132 @@ public class TimeSlotService {
         return map;
     }
 
+    private boolean isAzaBooking(Booking b) {
+        if (b == null || b.getBookingType() == null) return false;
+        String bt = b.getBookingType().trim().toLowerCase();
+        return "3aza".equals(bt) || "aza".equals(bt) || bt.contains("عزاء");
+    }
+
+    private LocalDate resolveBookingEndDate(Booking b) {
+        LocalDate rawEnd = b.getEndDate();
+        if (rawEnd == null || rawEnd.isEqual(b.getEventDate()) || rawEnd.isBefore(b.getEventDate())) {
+            if (isAzaBooking(b)) {
+                return b.getEventDate().plusDays(2);
+            }
+            return b.getEventDate();
+        }
+        return rawEnd;
+    }
+
     private DayAvailabilityResponse buildSingleDayAvailability(
             LocalDate date, Hall hall,
             List<Booking> dayBookings, List<HallBlackout> dayBlackouts) {
-        List<HourSlotStatus> hourSlots = buildHourlySlots(hall, dayBookings, dayBlackouts);
+        boolean isPastDate = date.isBefore(LocalDate.now());
+        List<HourSlotStatus> hourSlots = buildHourlySlots(hall, dayBookings, dayBlackouts, isPastDate);
+        List<DayReservationSummary> reservations = buildDayReservationSummaries(date, dayBookings);
         int availableCount = (int) hourSlots.stream()
                 .filter(slot -> "AVAILABLE".equals(slot.getStatus()))
                 .count();
-        String dayStatus = determineDayStatus(availableCount, hourSlots.size());
+        String dayStatus = isPastDate ? "FULLY_BOOKED" : determineDayStatus(availableCount, hourSlots.size());
 
         return DayAvailabilityResponse.builder()
                 .date(date)
                 .dayNumber(date.getDayOfMonth())
                 .status(dayStatus)
                 .hours(hourSlots)
+                .reservations(reservations)
                 .build();
     }
 
+    private List<DayReservationSummary> buildDayReservationSummaries(LocalDate date, List<Booking> dayBookings) {
+        List<DayReservationSummary> list = new ArrayList<>();
+        for (Booking b : dayBookings) {
+            boolean isAza = isAzaBooking(b);
+            LocalDate start = b.getEventDate();
+            LocalDate end = resolveBookingEndDate(b);
+            List<String> reservedDates = new ArrayList<>();
+            for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+                reservedDates.add(d.toString());
+            }
+            int daysCount = isAza ? 3 : Math.max(1, reservedDates.size());
+            int dayIndex = Math.max(1, (int) (date.toEpochDay() - start.toEpochDay() + 1));
+            int sh = b.getStartHour() != null ? b.getStartHour() : DEFAULT_DHUHR_HOUR;
+            int eh = b.getEndHour() != null ? b.getEndHour() : DEFAULT_MAGHRIB_HOUR;
+            String normalizedType = isAza ? "3aza" : "katbketab";
+            String eventLabel = isAza ? "عزاء (3 أيام)" : "عقد قران";
+            String formattedTimeRange = isAza && sh == DEFAULT_DHUHR_HOUR && eh == DEFAULT_MAGHRIB_HOUR
+                    ? "من 12:00 ظهراً (الظهر) إلى 06:00 مساءً (المغرب)"
+                    : "من " + formatHour(sh) + " إلى " + formatHour(eh);
+
+            list.add(DayReservationSummary.builder()
+                    .bookingId(b.getId())
+                    .code(b.getCode())
+                    .fullName(b.getFullName())
+                    .bookingType(normalizedType)
+                    .eventLabel(eventLabel)
+                    .eventDate(start)
+                    .endDate(end)
+                    .reservedDates(reservedDates)
+                    .daysCount(daysCount)
+                    .dayIndex(dayIndex)
+                    .startHour(sh)
+                    .endHour(eh)
+                    .formattedTimeRange(formattedTimeRange)
+                    .status(b.getStatus())
+                    .build());
+        }
+        return list;
+    }
+
     private List<HourSlotStatus> buildHourlySlots(
-            Hall hall, List<Booking> dayBookings, List<HallBlackout> dayBlackouts) {
+            Hall hall, List<Booking> dayBookings, List<HallBlackout> dayBlackouts, boolean isPastDate) {
         int open = hall.getOpenHour() != null ? hall.getOpenHour() : 0;
         int close = hall.getCloseHour() != null ? hall.getCloseHour() : 24;
         int buffer = hall.getBufferHours() != null ? hall.getBufferHours() : 1;
 
         List<HourSlotStatus> slots = new ArrayList<>();
         for (int h = open; h < close; h++) {
-            String status = determineHourStatus(h, buffer, dayBookings, dayBlackouts);
+            String status = isPastDate ? "BLACKOUT" : determineHourStatus(h, buffer, dayBookings, dayBlackouts);
+            Booking matched = isPastDate ? null : findMatchedBookingForHour(h, buffer, dayBookings);
+            String bookingType = null;
+            String eventLabel = null;
+            String bookingCode = null;
+            if (matched != null) {
+                boolean isAza = isAzaBooking(matched);
+                bookingType = isAza ? "3aza" : "katbketab";
+                eventLabel = isAza ? "عزاء" : "عقد قران";
+                bookingCode = matched.getCode();
+            }
             slots.add(HourSlotStatus.builder()
                     .hour(h)
                     .formattedHour(formatHour(h))
                     .status(status)
+                    .bookingType(bookingType)
+                    .eventLabel(eventLabel)
+                    .bookingCode(bookingCode)
                     .build());
         }
         return slots;
+    }
+
+    private Booking findMatchedBookingForHour(int hour, int buffer, List<Booking> bookings) {
+        for (Booking b : bookings) {
+            if (b.getStartHour() != null && b.getEndHour() != null
+                    && hour >= b.getStartHour() && hour < b.getEndHour()) {
+                return b;
+            }
+        }
+        if (buffer > 0) {
+            for (Booking b : bookings) {
+                if (b.getStartHour() == null || b.getEndHour() == null) continue;
+                boolean before = hour >= (b.getStartHour() - buffer) && hour < b.getStartHour();
+                boolean after = hour >= b.getEndHour() && hour < (b.getEndHour() + buffer);
+                if (before || after) {
+                    return b;
+                }
+            }
+        }
+        return null;
     }
 
     private String determineHourStatus(

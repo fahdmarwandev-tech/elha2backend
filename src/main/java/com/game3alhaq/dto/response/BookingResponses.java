@@ -5,6 +5,7 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 public final class BookingResponses {
 
@@ -27,12 +28,15 @@ public final class BookingResponses {
         private String secondaryPhone;
         private String email;
         private String bookingType;
+        private String eventLabel;
         private LocalDate eventDate;
         private LocalDate endDate;
+        private List<LocalDate> reservedDates;
         private Integer daysCount;
         private Integer startHour;
         private Integer endHour;
         private Integer durationHours;
+        private String formattedTimeRange;
         private Integer appliedBufferHours;
         private BigDecimal hourlyRate;
         private BigDecimal totalAmount;

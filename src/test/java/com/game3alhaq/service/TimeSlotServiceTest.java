@@ -128,17 +128,20 @@ class TimeSlotServiceTest {
 
     @Test
     void testThreeDayAzaBookingMarksAllThreeDays() {
+        testHall.setOpenHour(0);
+        testHall.setCloseHour(24);
         LocalDate startDate = LocalDate.of(2026, 11, 10);
         Booking azaBooking = Booking.builder()
                 .id(25L)
                 .code("DAR-AZA003")
+                .fullName("سالم الحارثي")
                 .hall(testHall)
                 .bookingType("3aza")
                 .eventDate(startDate)
                 .endDate(startDate.plusDays(2))
                 .daysCount(3)
-                .startHour(14)
-                .endHour(17)
+                .startHour(12)
+                .endHour(18)
                 .status("CONFIRMED")
                 .build();
 
@@ -150,18 +153,49 @@ class TimeSlotServiceTest {
 
         HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, 2026, 11);
 
+        assertEquals(12, response.getDhuhrHour());
         assertEquals(18, response.getMaghribHour());
+        List<String> expectedThreeDays = List.of("2026-11-10", "2026-11-11", "2026-11-12");
+
+        int expectedIdx = 1;
         for (int dayNum : List.of(10, 11, 12)) {
             DayAvailabilityResponse d = response.getDays().stream()
                     .filter(day -> day.getDayNumber() == dayNum)
                     .findFirst()
                     .orElseThrow();
             assertEquals("PARTIALLY_BOOKED", d.getStatus());
-            assertSlotStatus(d, 13, "BUFFER");
-            assertSlotStatus(d, 14, "BOOKED");
-            assertSlotStatus(d, 15, "BOOKED");
-            assertSlotStatus(d, 16, "BOOKED");
-            assertSlotStatus(d, 17, "BUFFER");
+            assertSlotStatus(d, 11, "BUFFER");
+            for (int h = 12; h < 18; h++) {
+                assertSlotStatus(d, h, "BOOKED");
+                HourSlotStatus slot = d.getHours().stream().filter(s -> s.getHour() == h).findFirst().orElseThrow();
+                assertEquals("3aza", slot.getBookingType());
+                assertEquals("عزاء", slot.getEventLabel());
+            }
+            assertSlotStatus(d, 18, "BUFFER");
+
+            assertNotNull(d.getReservations());
+            assertEquals(1, d.getReservations().size());
+            var summary = d.getReservations().get(0);
+            assertEquals("3aza", summary.getBookingType());
+            assertEquals("عزاء (3 أيام)", summary.getEventLabel());
+            assertEquals(3, summary.getDaysCount());
+            assertEquals(expectedIdx++, summary.getDayIndex());
+            assertEquals(expectedThreeDays, summary.getReservedDates());
+            assertEquals(12, summary.getStartHour());
+            assertEquals(18, summary.getEndHour());
+            assertEquals("من 12:00 ظهراً (الظهر) إلى 06:00 مساءً (المغرب)", summary.getFormattedTimeRange());
+        }
+
+        // Verify days 6 and 7 (before today Nov 8, 2026) are marked FULLY_BOOKED / BLACKOUT
+        for (int pastDayNum : List.of(6, 7)) {
+            DayAvailabilityResponse pastDay = response.getDays().stream()
+                    .filter(day -> day.getDayNumber() == pastDayNum)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("FULLY_BOOKED", pastDay.getStatus());
+            for (HourSlotStatus slot : pastDay.getHours()) {
+                assertEquals("BLACKOUT", slot.getStatus());
+            }
         }
     }
 

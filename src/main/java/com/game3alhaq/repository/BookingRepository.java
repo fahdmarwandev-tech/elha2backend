@@ -83,7 +83,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
         LEFT JOIN FETCH b.payment p
         WHERE (:status IS NULL OR b.status = :status)
           AND (:bookingType IS NULL OR b.bookingType = :bookingType)
-          AND (cast(:fromDate as date) IS NULL OR b.eventDate >= :fromDate)
+          AND (cast(:fromDate as date) IS NULL OR COALESCE(b.endDate, b.eventDate) >= :fromDate)
           AND (cast(:toDate as date) IS NULL OR b.eventDate <= :toDate)
         ORDER BY b.eventDate DESC, b.startHour ASC
     """)

@@ -213,6 +213,20 @@ class BookingServiceTest {
     }
 
     @Test
+    @DisplayName("Fail 3aza booking when startHour is before Dhuhr (12:00)")
+    void createBooking_AzaBeforeDhuhr_ThrowsException() {
+        hall.setOpenHour(0);
+        hall.setCloseHour(24);
+        createRequest.setBookingType("3aza");
+        createRequest.setStartHour(9);
+        createRequest.setEndHour(15);
+        when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
+
+        assertThrows(IllegalArgumentException.class, () -> bookingService.createBooking(createRequest));
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("Fail 3aza booking when endHour exceeds Maghrib time (18:00)")
     void createBooking_AzaAfterMaghrib_ThrowsException() {
         hall.setOpenHour(0);
@@ -227,15 +241,15 @@ class BookingServiceTest {
     }
 
     @Test
-    @DisplayName("3aza booking automatically spans 3 consecutive days and validates all 3 days")
+    @DisplayName("3aza booking from Dhuhr to Maghrib spans 3 consecutive days and validates all 3 days")
     void createBooking_AzaSpansThreeDays_Success() {
         hall.setOpenHour(0);
         hall.setCloseHour(24);
         LocalDate start = LocalDate.of(2026, 11, 10);
         createRequest.setBookingType("3aza");
         createRequest.setEventDate(start);
-        createRequest.setStartHour(9);
-        createRequest.setEndHour(13); // 4 hours/day * 3 days = 12 hours * 10 OMR = 120 OMR
+        createRequest.setStartHour(12);
+        createRequest.setEndHour(18); // 6 hours/day * 3 days = 18 hours * 10 OMR = 180 OMR
 
         when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
         when(blackoutRepository.findAllByHallIdAndBlackoutDate(eq(1L), any(LocalDate.class)))
@@ -263,8 +277,48 @@ class BookingServiceTest {
         assertEquals(start, res.getBooking().getEventDate());
         assertEquals(start.plusDays(2), res.getBooking().getEndDate());
         assertEquals(3, res.getBooking().getDaysCount());
-        assertEquals(0, BigDecimal.valueOf(120.0).compareTo(res.getBooking().getTotalAmount()));
+        assertEquals(List.of(start, start.plusDays(1), start.plusDays(2)), res.getBooking().getReservedDates());
+        assertEquals("عزاء (3 أيام)", res.getBooking().getEventLabel());
+        assertEquals("من 12:00 ظهراً (الظهر) إلى 06:00 مساءً (المغرب)", res.getBooking().getFormattedTimeRange());
+        assertEquals(0, BigDecimal.valueOf(180.0).compareTo(res.getBooking().getTotalAmount()));
         verify(bookingRepository, times(3)).findConflictingBookingsWithBuffer(
-                eq(1L), any(LocalDate.class), eq(9), eq(13), eq(1), any());
+                eq(1L), any(LocalDate.class), eq(12), eq(18), eq(1), any());
+    }
+
+    @Test
+    @DisplayName("Fail 3aza booking when hall is reserved for katbketab between Dhuhr and Maghrib on any of the 3 days")
+    void createBooking_AzaConflictsWithKatbKetabOnSharedHall_ThrowsException() {
+        hall.setOpenHour(0);
+        hall.setCloseHour(24);
+        LocalDate day1 = LocalDate.of(2026, 11, 10);
+        LocalDate day2 = LocalDate.of(2026, 11, 11);
+        createRequest.setBookingType("3aza");
+        createRequest.setEventDate(day1);
+        createRequest.setStartHour(12);
+        createRequest.setEndHour(18);
+
+        when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
+        when(blackoutRepository.findAllByHallIdAndBlackoutDate(eq(1L), any(LocalDate.class)))
+                .thenReturn(List.of());
+        when(bookingRepository.findConflictingBookingsWithBuffer(eq(1L), eq(day1), eq(12), eq(18), eq(1), any()))
+                .thenReturn(List.of());
+
+        Booking existingKatbKetab = Booking.builder()
+                .id(77L).bookingType("katbketab").eventDate(day2).startHour(14).endHour(16).build();
+        when(bookingRepository.findConflictingBookingsWithBuffer(eq(1L), eq(day2), eq(12), eq(18), eq(1), any()))
+                .thenReturn(List.of(existingKatbKetab));
+
+        assertThrows(BookingConflictException.class, () -> bookingService.createBooking(createRequest));
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Fail booking when eventDate is in the past")
+    void createBooking_PastDate_ThrowsException() {
+        createRequest.setEventDate(LocalDate.now().minusDays(1));
+        when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
+
+        assertThrows(IllegalArgumentException.class, () -> bookingService.createBooking(createRequest));
+        verify(bookingRepository, never()).save(any());
     }
 }
