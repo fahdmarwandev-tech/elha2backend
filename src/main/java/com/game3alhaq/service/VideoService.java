@@ -9,6 +9,9 @@ import com.game3alhaq.repository.VideoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -138,6 +141,9 @@ public class VideoService {
         if (meta.title == null || meta.title.isBlank()) {
             meta.title = fetchTitleFromOEmbed(videoUrl);
         }
+        if (meta.duration == null || meta.duration.isBlank()) {
+            meta.duration = scrapeYouTubeDuration(videoId);
+        }
         return meta;
     }
 
@@ -209,6 +215,41 @@ public class VideoService {
                 meta.viewsCount = java.text.NumberFormat.getNumberInstance(java.util.Locale.US).format(views);
             } catch (NumberFormatException ignored) {}
         }
+    }
+
+    public String scrapeYouTubeDuration(String videoId) {
+        if (videoId == null || videoId.isBlank()) return null;
+        try {
+            String url = "https://www.youtube.com/watch?v=" + videoId;
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            headers.set("Accept-Language", "en-US,en;q=0.9");
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                String html = response.getBody();
+                Matcher m = Pattern.compile("\"lengthSeconds\":\"(\\d+)\"").matcher(html);
+                if (m.find()) {
+                    long totalSeconds = Long.parseLong(m.group(1));
+                    if (totalSeconds > 0) {
+                        long hours = totalSeconds / 3600;
+                        long minutes = (totalSeconds % 3600) / 60;
+                        long seconds = totalSeconds % 60;
+                        if (hours > 0) {
+                            return String.format("%d:%02d:%02d", hours, minutes, seconds);
+                        }
+                        return String.format("%02d:%02d", minutes, seconds);
+                    }
+                }
+                Matcher m2 = Pattern.compile("itemprop=\"duration\"\\s+content=\"([^\"]+)\"").matcher(html);
+                if (m2.find()) {
+                    return parseIsoDuration(m2.group(1));
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Scraping YouTube duration failed for id {}: {}", videoId, ex.getMessage());
+        }
+        return null;
     }
 
     public String fetchTitleFromOEmbed(String videoUrl) {
