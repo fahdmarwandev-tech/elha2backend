@@ -152,6 +152,19 @@ public class MailService {
         String currencyStr = escapeHtml(b.getCurrency() != null ? b.getCurrency() : "OMR");
         String phoneStr = escapeHtml(b.getPhone() != null ? b.getPhone() : "غير محدد");
 
+        // Couple's names (اسما العروسين) or deceased name (اسم المتوفى) / occasion notes
+        String notesRow = "";
+        if (b.getNotes() != null && !b.getNotes().trim().isBlank()) {
+            boolean isKatb = "katbketab".equalsIgnoreCase(b.getBookingType());
+            String notesLabel = isKatb ? "اسما العروسين:" : "اسم المتوفى رحمه الله:";
+            notesRow = """
+                              <tr>
+                                <td style="color: #8EA3BF;">%s</td>
+                                <td style="color: #FFE8B8; font-weight: 800;">%s</td>
+                              </tr>
+                """.formatted(notesLabel, escapeHtml(b.getNotes().trim()));
+        }
+
         return """
             <!DOCTYPE html>
             <html lang="ar" dir="rtl">
@@ -209,6 +222,7 @@ public class MailService {
                                 <td style="color: #8EA3BF; width: 35%%;">نوع المناسبة:</td>
                                 <td style="color: #FFE8B8; font-weight: 800;">%s</td>
                               </tr>
+                              %s
                               <tr>
                                 <td style="color: #8EA3BF;">القاعة المخصصة:</td>
                                 <td style="color: #FAF7F0; font-weight: 700;">%s</td>
@@ -278,6 +292,7 @@ public class MailService {
                 customerName,
                 bookingCode,
                 occasionTitle,
+                notesRow,
                 hallName,
                 dateDisplay,
                 timeDisplay,

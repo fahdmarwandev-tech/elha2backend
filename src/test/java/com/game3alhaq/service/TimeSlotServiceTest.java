@@ -166,8 +166,9 @@ class TimeSlotServiceTest {
             assertEquals("PARTIALLY_BOOKED", d.getStatus());
             assertSlotStatus(d, 11, "BUFFER");
             for (int h = 12; h < 18; h++) {
-                assertSlotStatus(d, h, "BOOKED");
-                HourSlotStatus slot = d.getHours().stream().filter(s -> s.getHour() == h).findFirst().orElseThrow();
+                final int currentHour = h;
+                assertSlotStatus(d, currentHour, "BOOKED");
+                HourSlotStatus slot = d.getHours().stream().filter(s -> s.getHour() == currentHour).findFirst().orElseThrow();
                 assertEquals("3aza", slot.getBookingType());
                 assertEquals("عزاء", slot.getEventLabel());
             }
