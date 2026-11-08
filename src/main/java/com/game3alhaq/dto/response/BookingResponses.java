@@ -28,6 +28,8 @@ public final class BookingResponses {
         private String email;
         private String bookingType;
         private LocalDate eventDate;
+        private LocalDate endDate;
+        private Integer daysCount;
         private Integer startHour;
         private Integer endHour;
         private Integer durationHours;

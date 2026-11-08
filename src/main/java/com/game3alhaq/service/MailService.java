@@ -128,10 +128,15 @@ public class MailService {
     }
 
     private String buildConfirmationHtml(Booking b) {
-        String occasion = "KATB_KETAB".equalsIgnoreCase(b.getBookingType()) ? "عقد قران" : "عزاء";
+        String type = b.getBookingType() != null ? b.getBookingType().trim().toLowerCase() : "";
+        boolean isAza = "3aza".equals(type) || "aza".equals(type) || type.contains("عزاء");
+        String occasion = isAza ? "عزاء (3 أيام)" : "عقد قران";
+        String dateDisplay = (b.getEndDate() != null && !b.getEndDate().equals(b.getEventDate()))
+                ? b.getEventDate() + " إلى " + b.getEndDate() + " (3 أيام)"
+                : String.valueOf(b.getEventDate());
         return CONFIRMATION_EMAIL_TEMPLATE.formatted(
                 b.getFullName(), b.getCode(), b.getHall().getName(),
-                occasion, b.getEventDate(), b.getStartHour(), b.getEndHour(),
+                occasion, dateDisplay, b.getStartHour(), b.getEndHour(),
                 b.getTotalAmount(), b.getCurrency());
     }
 }

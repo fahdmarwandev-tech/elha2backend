@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -22,6 +23,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class TimeSlotService {
+
+    public static final int DEFAULT_MAGHRIB_HOUR = 18;
+    public static final String DEFAULT_MAGHRIB_TIME = "18:05";
 
     private final HallRepository hallRepository;
     private final BookingRepository bookingRepository;
@@ -60,8 +64,10 @@ public class TimeSlotService {
                 .year(year)
                 .month(month)
                 .bufferHours(hall.getBufferHours())
-                .openHour(hall.getOpenHour())
-                .closeHour(hall.getCloseHour())
+                .openHour(hall.getOpenHour() != null ? hall.getOpenHour() : 0)
+                .closeHour(hall.getCloseHour() != null ? hall.getCloseHour() : 24)
+                .maghribHour(DEFAULT_MAGHRIB_HOUR)
+                .maghribTime(DEFAULT_MAGHRIB_TIME)
                 .days(days)
                 .build();
     }
@@ -69,8 +75,7 @@ public class TimeSlotService {
     private List<DayAvailabilityResponse> buildDaysAvailability(
             LocalDate startDate, LocalDate endDate, Hall hall,
             List<Booking> bookings, List<HallBlackout> blackouts) {
-        Map<LocalDate, List<Booking>> bookingsByDate = bookings.stream()
-                .collect(Collectors.groupingBy(Booking::getEventDate));
+        Map<LocalDate, List<Booking>> bookingsByDate = groupBookingsByDate(bookings, startDate, endDate);
         Map<LocalDate, List<HallBlackout>> blackoutsByDate = blackouts.stream()
                 .collect(Collectors.groupingBy(HallBlackout::getBlackoutDate));
 
@@ -81,6 +86,23 @@ public class TimeSlotService {
             dayList.add(buildSingleDayAvailability(date, hall, dayBookings, dayBlackouts));
         }
         return dayList;
+    }
+
+    private Map<LocalDate, List<Booking>> groupBookingsByDate(
+            List<Booking> bookings, LocalDate startDate, LocalDate endDate) {
+        Map<LocalDate, List<Booking>> map = new HashMap<>();
+        for (Booking b : bookings) {
+            if (b.getEventDate() == null) {
+                continue;
+            }
+            LocalDate from = b.getEventDate().isBefore(startDate) ? startDate : b.getEventDate();
+            LocalDate rawEnd = b.getEndDate() != null ? b.getEndDate() : b.getEventDate();
+            LocalDate to = rawEnd.isAfter(endDate) ? endDate : rawEnd;
+            for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
+                map.computeIfAbsent(d, k -> new ArrayList<>()).add(b);
+            }
+        }
+        return map;
     }
 
     private DayAvailabilityResponse buildSingleDayAvailability(
@@ -102,7 +124,7 @@ public class TimeSlotService {
 
     private List<HourSlotStatus> buildHourlySlots(
             Hall hall, List<Booking> dayBookings, List<HallBlackout> dayBlackouts) {
-        int open = hall.getOpenHour() != null ? hall.getOpenHour() : 13;
+        int open = hall.getOpenHour() != null ? hall.getOpenHour() : 0;
         int close = hall.getCloseHour() != null ? hall.getCloseHour() : 24;
         int buffer = hall.getBufferHours() != null ? hall.getBufferHours() : 1;
 

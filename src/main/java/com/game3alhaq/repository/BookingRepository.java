@@ -39,7 +39,16 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     List<Booking> findAllByStatusAndPaymentExpiresAtBefore(String status, OffsetDateTime cutoff);
 
-    @Query("SELECT b FROM Booking b WHERE b.hall.id = :hallId AND b.eventDate BETWEEN :start AND :end AND (b.status IN ('CONFIRMED', 'COMPLETED') OR (b.status = 'PENDING_PAYMENT' AND b.paymentExpiresAt > :now))")
+    @Query("""
+        SELECT b FROM Booking b
+        WHERE b.hall.id = :hallId
+          AND b.eventDate <= :end
+          AND COALESCE(b.endDate, b.eventDate) >= :start
+          AND (
+               b.status IN ('CONFIRMED', 'COMPLETED')
+               OR (b.status = 'PENDING_PAYMENT' AND b.paymentExpiresAt > :now)
+          )
+    """)
     List<Booking> findActiveBookingsInDateRange(
             @Param("hallId") Long hallId,
             @Param("start") LocalDate start,
@@ -50,7 +59,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("""
         SELECT b FROM Booking b
         WHERE b.hall.id = :hallId
-          AND b.eventDate = :eventDate
+          AND b.eventDate <= :eventDate
+          AND COALESCE(b.endDate, b.eventDate) >= :eventDate
           AND (
                b.status IN ('CONFIRMED', 'COMPLETED')
                OR (b.status = 'PENDING_PAYMENT' AND b.paymentExpiresAt > :now)

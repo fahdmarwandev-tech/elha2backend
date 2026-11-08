@@ -54,6 +54,13 @@ public class Booking {
     @Column(name = "event_date", nullable = false)
     private LocalDate eventDate;
 
+    @Column(name = "end_date")
+    private LocalDate endDate;
+
+    @Column(name = "days_count", nullable = false)
+    @Builder.Default
+    private Integer daysCount = 1;
+
     @Column(name = "start_hour", nullable = false)
     private Integer startHour;
 

@@ -126,6 +126,45 @@ class TimeSlotServiceTest {
         }
     }
 
+    @Test
+    void testThreeDayAzaBookingMarksAllThreeDays() {
+        LocalDate startDate = LocalDate.of(2026, 11, 10);
+        Booking azaBooking = Booking.builder()
+                .id(25L)
+                .code("DAR-AZA003")
+                .hall(testHall)
+                .bookingType("3aza")
+                .eventDate(startDate)
+                .endDate(startDate.plusDays(2))
+                .daysCount(3)
+                .startHour(14)
+                .endHour(17)
+                .status("CONFIRMED")
+                .build();
+
+        when(hallRepository.findById(1L)).thenReturn(Optional.of(testHall));
+        when(bookingRepository.findActiveBookingsInDateRange(eq(1L), any(LocalDate.class), any(LocalDate.class), any(OffsetDateTime.class)))
+                .thenReturn(List.of(azaBooking));
+        when(blackoutRepository.findAllByHallIdAndBlackoutDateBetween(eq(1L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of());
+
+        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, 2026, 11);
+
+        assertEquals(18, response.getMaghribHour());
+        for (int dayNum : List.of(10, 11, 12)) {
+            DayAvailabilityResponse d = response.getDays().stream()
+                    .filter(day -> day.getDayNumber() == dayNum)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("PARTIALLY_BOOKED", d.getStatus());
+            assertSlotStatus(d, 13, "BUFFER");
+            assertSlotStatus(d, 14, "BOOKED");
+            assertSlotStatus(d, 15, "BOOKED");
+            assertSlotStatus(d, 16, "BOOKED");
+            assertSlotStatus(d, 17, "BUFFER");
+        }
+    }
+
     private void assertSlotStatus(DayAvailabilityResponse day, int hour, String expectedStatus) {
         HourSlotStatus slot = day.getHours().stream()
                 .filter(s -> s.getHour() == hour)

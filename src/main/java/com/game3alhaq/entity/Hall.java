@@ -48,7 +48,7 @@ public class Hall {
 
     @Column(name = "open_hour", nullable = false)
     @Builder.Default
-    private Integer openHour = 13;
+    private Integer openHour = 0;
 
     @Column(name = "close_hour", nullable = false)
     @Builder.Default

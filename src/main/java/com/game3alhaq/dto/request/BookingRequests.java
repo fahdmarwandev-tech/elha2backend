@@ -41,6 +41,10 @@ public final class BookingRequests {
         @NotNull(message = "Event date is required")
         private LocalDate eventDate;
 
+        private LocalDate endDate;
+
+        private Integer daysCount;
+
         @NotNull(message = "Start hour is required")
         private Integer startHour;
 
@@ -79,6 +83,10 @@ public final class BookingRequests {
 
         @NotNull(message = "Event date is required")
         private LocalDate eventDate;
+
+        private LocalDate endDate;
+
+        private Integer daysCount;
 
         @NotNull(message = "Start hour is required")
         private Integer startHour;

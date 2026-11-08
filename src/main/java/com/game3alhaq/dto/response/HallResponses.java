@@ -69,6 +69,8 @@ public class HallResponses {
         private Integer bufferHours;
         private Integer openHour;
         private Integer closeHour;
+        private Integer maghribHour;
+        private String maghribTime;
         private List<DayAvailabilityResponse> days;
     }
 

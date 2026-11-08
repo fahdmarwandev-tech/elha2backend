@@ -33,6 +33,9 @@ import java.util.*;
 @RequiredArgsConstructor
 public class BookingService {
 
+    public static final int MAGHRIB_CUTOFF_HOUR = 18;
+    public static final int AZA_DAYS_COUNT = 3;
+
     private final BookingRepository bookingRepository;
     private final HallRepository hallRepository;
     private final HallBlackoutRepository blackoutRepository;
@@ -44,11 +47,12 @@ public class BookingService {
     @Transactional
     public BookingInitiationResponse createBooking(CreateBookingRequest req) {
         Hall hall = getActiveHall(req.getHallId());
-        validateTiming(hall, req.getStartHour(), req.getEndHour());
-        validateBlackouts(hall, req.getEventDate(), req.getStartHour(), req.getEndHour());
-        validateConflictsWithBuffer(hall, req.getEventDate(), req.getStartHour(), req.getEndHour());
+        validateTiming(hall, req.getBookingType(), req.getStartHour(), req.getEndHour());
+        int daysCount = resolveDaysCount(req.getBookingType());
+        LocalDate endDate = req.getEventDate().plusDays(daysCount - 1L);
+        validateDateRangeAvailability(hall, req.getEventDate(), endDate, req.getStartHour(), req.getEndHour());
         User user = resolveCurrentUser();
-        Booking booking = initBookingFromRequest(hall, user, req);
+        Booking booking = initBookingFromRequest(hall, user, req, daysCount, endDate);
         booking.setStatus("PENDING_PAYMENT");
         booking.setPaymentExpiresAt(OffsetDateTime.now().plusMinutes(15));
         Booking saved = bookingRepository.save(booking);
@@ -61,10 +65,11 @@ public class BookingService {
     @PreAuthorize("hasRole('ADMIN')")
     public BookingResponse adminCreateBooking(AdminCreateBookingRequest req) {
         Hall hall = getActiveHall(req.getHallId());
-        validateTiming(hall, req.getStartHour(), req.getEndHour());
-        validateBlackouts(hall, req.getEventDate(), req.getStartHour(), req.getEndHour());
-        validateConflictsWithBuffer(hall, req.getEventDate(), req.getStartHour(), req.getEndHour());
-        Booking booking = initBookingFromAdmin(hall, req);
+        validateTiming(hall, req.getBookingType(), req.getStartHour(), req.getEndHour());
+        int daysCount = resolveDaysCount(req.getBookingType());
+        LocalDate endDate = req.getEventDate().plusDays(daysCount - 1L);
+        validateDateRangeAvailability(hall, req.getEventDate(), endDate, req.getStartHour(), req.getEndHour());
+        Booking booking = initBookingFromAdmin(hall, req, daysCount, endDate);
         boolean skip = Boolean.TRUE.equals(req.getSkipPayment());
         booking.setStatus(skip ? "CONFIRMED" : "PENDING_PAYMENT");
         booking.setPaymentExpiresAt(skip ? null : OffsetDateTime.now().plusMinutes(15));
@@ -152,14 +157,40 @@ public class BookingService {
         return hall;
     }
 
-    private void validateTiming(Hall hall, int startHour, int endHour) {
+    private void validateTiming(Hall hall, String bookingType, int startHour, int endHour) {
         if (startHour >= endHour) {
             throw new IllegalArgumentException("Start hour must be strictly before end hour");
         }
-        if (startHour < hall.getOpenHour() || endHour > hall.getCloseHour()) {
+        int open = hall.getOpenHour() != null ? hall.getOpenHour() : 0;
+        int close = hall.getCloseHour() != null ? hall.getCloseHour() : 24;
+        if (startHour < open || endHour > close) {
             throw new IllegalArgumentException(String.format(
                     "Booking hours (%d-%d) outside hall operating hours (%d-%d)",
-                    startHour, endHour, hall.getOpenHour(), hall.getCloseHour()));
+                    startHour, endHour, open, close));
+        }
+        if (isAzaBooking(bookingType) && endHour > MAGHRIB_CUTOFF_HOUR) {
+            throw new IllegalArgumentException(
+                    "لا يمكن حجز مجلس عزاء بعد وقت أذان المغرب (" + MAGHRIB_CUTOFF_HOUR + ":00)");
+        }
+    }
+
+    private boolean isAzaBooking(String bookingType) {
+        if (bookingType == null) {
+            return false;
+        }
+        String normalized = bookingType.trim().toLowerCase();
+        return "3aza".equals(normalized) || "aza".equals(normalized) || normalized.contains("عزاء");
+    }
+
+    private int resolveDaysCount(String bookingType) {
+        return isAzaBooking(bookingType) ? AZA_DAYS_COUNT : 1;
+    }
+
+    private void validateDateRangeAvailability(
+            Hall hall, LocalDate startDate, LocalDate endDate, int startHour, int endHour) {
+        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+            validateBlackouts(hall, date, startHour, endHour);
+            validateConflictsWithBuffer(hall, date, startHour, endHour);
         }
     }
 
@@ -168,10 +199,10 @@ public class BookingService {
         for (HallBlackout b : blackouts) {
             if (b.getStartHour() == null || b.getEndHour() == null) {
                 String msg = b.getReason() != null ? b.getReason() : "صيانة أو مناسبة رسمية";
-                throw new BookingConflictException("القاعة محجوبة بالكامل في هذا التاريخ: " + msg);
+                throw new BookingConflictException("القاعة محجوبة بالكامل في هذا التاريخ (" + date + "): " + msg);
             }
             if (startHour < b.getEndHour() && endHour > b.getStartHour()) {
-                throw new BookingConflictException("الوقت المحدد يتعارض مع فترة محجوبة: " + b.getReason());
+                throw new BookingConflictException("الوقت المحدد يتعارض مع فترة محجوبة في (" + date + "): " + b.getReason());
             }
         }
     }
@@ -180,33 +211,39 @@ public class BookingService {
         List<Booking> conflicts = bookingRepository.findConflictingBookingsWithBuffer(
                 hall.getId(), date, startHour, endHour, hall.getBufferHours(), OffsetDateTime.now());
         if (!conflicts.isEmpty()) {
-            throw new BookingConflictException("الوقت المحدد يتعارض مع حجز قائم أو فترة التجهيز الإلزامية");
+            throw new BookingConflictException("الوقت المحدد يتعارض مع حجز قائم أو فترة التجهيز الإلزامية في تاريخ " + date);
         }
     }
 
-    private Booking initBookingFromRequest(Hall hall, User user, CreateBookingRequest req) {
+    private Booking initBookingFromRequest(
+            Hall hall, User user, CreateBookingRequest req, int daysCount, LocalDate endDate) {
         int duration = req.getEndHour() - req.getStartHour();
+        BigDecimal total = BigDecimal.valueOf((long) duration * daysCount).multiply(hall.getHourlyRate());
         return Booking.builder()
                 .code(generateUniqueCode()).hall(hall).user(user)
                 .fullName(req.getFullName()).nationalId(req.getNationalId()).phone(req.getPhone())
                 .secondaryPhone(req.getSecondaryPhone()).email(req.getEmail())
                 .bookingType(req.getBookingType()).eventDate(req.getEventDate())
+                .endDate(endDate).daysCount(daysCount)
                 .startHour(req.getStartHour()).endHour(req.getEndHour()).durationHours(duration)
                 .appliedBufferHours(hall.getBufferHours()).hourlyRate(hall.getHourlyRate())
-                .totalAmount(BigDecimal.valueOf(duration).multiply(hall.getHourlyRate()))
+                .totalAmount(total)
                 .currency(hall.getCurrency()).notes(req.getNotes()).build();
     }
 
-    private Booking initBookingFromAdmin(Hall hall, AdminCreateBookingRequest req) {
+    private Booking initBookingFromAdmin(
+            Hall hall, AdminCreateBookingRequest req, int daysCount, LocalDate endDate) {
         int duration = req.getEndHour() - req.getStartHour();
+        BigDecimal total = BigDecimal.valueOf((long) duration * daysCount).multiply(hall.getHourlyRate());
         return Booking.builder()
                 .code(generateUniqueCode()).hall(hall).user(null)
                 .fullName(req.getFullName()).nationalId(req.getNationalId()).phone(req.getPhone())
                 .secondaryPhone(req.getSecondaryPhone()).email(req.getEmail())
                 .bookingType(req.getBookingType()).eventDate(req.getEventDate())
+                .endDate(endDate).daysCount(daysCount)
                 .startHour(req.getStartHour()).endHour(req.getEndHour()).durationHours(duration)
                 .appliedBufferHours(hall.getBufferHours()).hourlyRate(hall.getHourlyRate())
-                .totalAmount(BigDecimal.valueOf(duration).multiply(hall.getHourlyRate()))
+                .totalAmount(total)
                 .currency(hall.getCurrency()).notes(req.getNotes()).build();
     }
 

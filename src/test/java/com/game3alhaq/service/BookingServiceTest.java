@@ -211,4 +211,60 @@ class BookingServiceTest {
 
         verify(bookingRepository, times(1)).markExpiredBookings(any(OffsetDateTime.class));
     }
+
+    @Test
+    @DisplayName("Fail 3aza booking when endHour exceeds Maghrib time (18:00)")
+    void createBooking_AzaAfterMaghrib_ThrowsException() {
+        hall.setOpenHour(0);
+        hall.setCloseHour(24);
+        createRequest.setBookingType("3aza");
+        createRequest.setStartHour(17);
+        createRequest.setEndHour(19);
+        when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
+
+        assertThrows(IllegalArgumentException.class, () -> bookingService.createBooking(createRequest));
+        verify(bookingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("3aza booking automatically spans 3 consecutive days and validates all 3 days")
+    void createBooking_AzaSpansThreeDays_Success() {
+        hall.setOpenHour(0);
+        hall.setCloseHour(24);
+        LocalDate start = LocalDate.of(2026, 11, 10);
+        createRequest.setBookingType("3aza");
+        createRequest.setEventDate(start);
+        createRequest.setStartHour(9);
+        createRequest.setEndHour(13); // 4 hours/day * 3 days = 12 hours * 10 OMR = 120 OMR
+
+        when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
+        when(blackoutRepository.findAllByHallIdAndBlackoutDate(eq(1L), any(LocalDate.class)))
+                .thenReturn(List.of());
+        when(bookingRepository.findConflictingBookingsWithBuffer(anyLong(), any(), anyInt(), anyInt(), anyInt(), any()))
+                .thenReturn(List.of());
+        when(bookingRepository.findByCode(anyString())).thenReturn(Optional.empty());
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Payment payment = Payment.builder()
+                .id(201L).paypalOrderId("ORDER-AZA").approvalUrl("https://paypal.com/aza").build();
+        when(paymentService.createPayPalOrder(any(Booking.class))).thenReturn(payment);
+        when(bookingMapper.toResponse(any(Booking.class))).thenAnswer(inv -> {
+            Booking b = inv.getArgument(0);
+            return BookingResponse.builder()
+                    .eventDate(b.getEventDate())
+                    .endDate(b.getEndDate())
+                    .daysCount(b.getDaysCount())
+                    .totalAmount(b.getTotalAmount())
+                    .build();
+        });
+
+        BookingInitiationResponse res = bookingService.createBooking(createRequest);
+
+        assertEquals(start, res.getBooking().getEventDate());
+        assertEquals(start.plusDays(2), res.getBooking().getEndDate());
+        assertEquals(3, res.getBooking().getDaysCount());
+        assertEquals(0, BigDecimal.valueOf(120.0).compareTo(res.getBooking().getTotalAmount()));
+        verify(bookingRepository, times(3)).findConflictingBookingsWithBuffer(
+                eq(1L), any(LocalDate.class), eq(9), eq(13), eq(1), any());
+    }
 }
