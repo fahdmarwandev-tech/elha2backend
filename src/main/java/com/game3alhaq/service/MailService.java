@@ -1,6 +1,8 @@
 package com.game3alhaq.service;
 
 import com.game3alhaq.entity.Booking;
+import com.game3alhaq.entity.StaffEmail;
+import com.game3alhaq.repository.StaffEmailRepository;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,10 +15,12 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 
 /**
  * Mail Service for Game3 Al-Haq / Dar Monasbat platform.
+ * Dispatches luxury confirmation emails to customers and mosque staff members.
  * Modeled after the Re-Sapori luxury email service architecture.
  */
 @Slf4j
@@ -24,32 +28,68 @@ import java.util.Locale;
 public class MailService {
 
     private final JavaMailSender mailSender;
+    private final StaffEmailRepository staffEmailRepository;
 
-    @Value("${spring.mail.username:marwanyasserhassan7@gmail.com}")
-    private String fromEmail = "marwanyasserhassan7@gmail.com";
+    @Value("${spring.mail.username:resapori.web@gmail.com}")
+    private String fromEmail = "resapori.web@gmail.com";
 
     private static final DateTimeFormatter AR_DATE_FORMAT = DateTimeFormatter.ofPattern("EEEE، d MMMM yyyy", new Locale("ar"));
 
-    public MailService(@Autowired(required = false) JavaMailSender mailSender) {
+    public MailService(@Autowired(required = false) JavaMailSender mailSender,
+                       @Autowired(required = false) StaffEmailRepository staffEmailRepository) {
         this.mailSender = mailSender;
+        this.staffEmailRepository = staffEmailRepository;
     }
 
     /**
-     * Sends booking confirmation HTML email to the customer who made the reservation.
-     * Modeled after Re-Sapori's sendOrderConfirmation flow.
+     * Sends booking confirmation HTML email to the customer who made the reservation,
+     * and simultaneously sends notification emails to all staff emails registered in the database.
      */
     @Async
     public void sendBookingConfirmation(Booking booking) {
         if (!canSendEmail(booking)) {
-            log.info("Skipping booking confirmation email: mailSender not available or recipient email missing.");
+            log.info("Skipping booking confirmation email: mailSender not available or booking invalid.");
             return;
         }
 
-        try {
-            sendHtmlBookingConfirmation(booking);
-        } catch (Exception ex) {
-            log.warn("Failed to dispatch booking confirmation email via SMTP to {}: {}",
-                    booking.getEmail(), ex.getMessage());
+        // 1. Send confirmation email to the customer
+        if (booking.getEmail() != null && !booking.getEmail().isBlank()) {
+            String customerEmail = booking.getEmail().trim();
+            try {
+                sendHtmlBookingConfirmation(booking, customerEmail, false);
+                log.info("Luxury booking confirmation email successfully dispatched to customer: {} for booking: {}",
+                        customerEmail, booking.getCode());
+            } catch (Exception ex) {
+                log.warn("Failed to dispatch booking confirmation email via SMTP to customer {}: {}",
+                        customerEmail, ex.getMessage());
+            }
+        }
+
+        // 2. Dispatch notification email simultaneously to all staff emails
+        if (staffEmailRepository != null) {
+            try {
+                List<StaffEmail> staffList = staffEmailRepository.findAll();
+                String customerEmail = booking.getEmail() != null ? booking.getEmail().trim() : "";
+
+                for (StaffEmail staff : staffList) {
+                    if (staff != null && staff.getEmail() != null && !staff.getEmail().isBlank()) {
+                        String staffEmailAddr = staff.getEmail().trim();
+                        // Prevent duplicate if staff email is identical to customer email
+                        if (!staffEmailAddr.equalsIgnoreCase(customerEmail)) {
+                            try {
+                                sendHtmlBookingConfirmation(booking, staffEmailAddr, true);
+                                log.info("Staff notification email successfully dispatched to: {} for booking: {}",
+                                        staffEmailAddr, booking.getCode());
+                            } catch (Exception ex) {
+                                log.warn("Failed to dispatch booking notification to staff {}: {}",
+                                        staffEmailAddr, ex.getMessage());
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to retrieve staff emails for booking notification: {}", e.getMessage());
+            }
         }
     }
 
@@ -73,7 +113,7 @@ public class MailService {
             log.info("JavaMailSender bean not configured. Skipping confirmation email.");
             return false;
         }
-        return booking != null && booking.getEmail() != null && !booking.getEmail().isBlank();
+        return booking != null;
     }
 
     private boolean canSendOtp(String toEmail, String otpCode) {
@@ -84,25 +124,24 @@ public class MailService {
         return toEmail != null && !toEmail.isBlank() && otpCode != null && !otpCode.isBlank();
     }
 
-    private void sendHtmlBookingConfirmation(Booking booking) throws Exception {
+    private void sendHtmlBookingConfirmation(Booking booking, String recipientEmail, boolean isStaff) throws Exception {
         MimeMessage message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(
                 message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
 
-        String sender = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail : "marwanyasserhassan7@gmail.com";
+        String sender = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail : "resapori.web@gmail.com";
         helper.setFrom(sender, "جامع الحق — دار المناسبات");
-        helper.setTo(booking.getEmail().trim());
+        helper.setTo(recipientEmail.trim());
 
         String typeStr = resolveOccasionTitle(booking.getBookingType());
-        String subject = "تأكيد حجز " + typeStr + " — جامع الحق [" + escapeHtml(booking.getCode()) + "]";
+        String subject = (isStaff ? "[إشعار إدارة] حجز جديد: " : "تأكيد حجز ")
+                + typeStr + " — جامع الحق [" + escapeHtml(booking.getCode()) + "]";
         helper.setSubject(subject);
 
-        String htmlContent = buildLuxuryBookingConfirmationHtml(booking);
+        String htmlContent = buildLuxuryBookingConfirmationHtml(booking, isStaff);
         helper.setText(htmlContent, true);
 
         mailSender.send(message);
-        log.info("Luxury booking confirmation email successfully dispatched to: {} for booking: {}",
-                booking.getEmail(), booking.getCode());
     }
 
     private void sendOtpHtmlMessage(String toEmail, String otpCode) throws Exception {
@@ -126,7 +165,7 @@ public class MailService {
      * Builds luxury HTML email for booking confirmation.
      * Modeled after Re-Sapori's buildOrderConfirmedEmail template.
      */
-    private String buildLuxuryBookingConfirmationHtml(Booking b) {
+    private String buildLuxuryBookingConfirmationHtml(Booking b, boolean isStaff) {
         String customerName = escapeHtml(b.getFullName() != null ? b.getFullName() : "ضيفنا الكريم");
         String bookingCode = escapeHtml(b.getCode() != null ? b.getCode() : "HAQ-BOOKING");
         String occasionTitle = resolveOccasionTitle(b.getBookingType());
@@ -165,6 +204,13 @@ public class MailService {
                 """.formatted(notesLabel, escapeHtml(b.getNotes().trim()));
         }
 
+        String statusBadgeText = isStaff ? "● إشعار حجز جديد معتمد — إدارة ومسؤولي جامع الحق" : "● تم تأكيد الحجز والاعتماد بنجاح";
+        String greetingHeader = isStaff ? "إشعار إداري: تم اعتماد حجز جديد باسم " + customerName : "مرحباً " + customerName + "، تم اعتماد حجزكم المبارك!";
+        String greetingParagraph = isStaff
+                ? "السلام عليكم ورحمة الله وبركاته، نود إحاطة إدارتكم الموقرة بأنه قد تم تسجيل وتأكيد حجز جديد في دار المناسبات وفق البيانات والتفاصيل التالية:"
+                : "السلام عليكم ورحمة الله وبركاته، يسر إدارة جامع الحق إفادتكم بأنه قد تم تسجيل وتأكيد حجزكم في دار المناسبات وفق البيانات والتفاصيل الموضحة أدناه:";
+        String replyToEmail = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail : "resapori.web@gmail.com";
+
         return """
             <!DOCTYPE html>
             <html lang="ar" dir="rtl">
@@ -192,15 +238,15 @@ public class MailService {
                         <td style="padding: 30px 35px 20px 35px; color: #FAF7F0;">
                           <div style="text-align: center; margin-bottom: 20px;">
                             <span style="display: inline-block; background: rgba(16, 185, 129, 0.15); border: 1px solid #10B981; color: #34D399; padding: 6px 20px; border-radius: 20px; font-size: 12px; font-weight: 800; letter-spacing: 1px;">
-                              ● تم تأكيد الحجز والاعتماد بنجاح
+                              %s
                             </span>
                           </div>
 
                           <h1 style="font-size: 22px; font-weight: 800; color: #FFFFFF; margin: 0 0 12px 0; text-align: center;">
-                            مرحباً %s، تم اعتماد حجزكم المبارك!
+                            %s
                           </h1>
                           <p style="font-size: 14px; line-height: 1.7; color: #8EA3BF; margin: 0 0 25px 0; text-align: center;">
-                            السلام عليكم ورحمة الله وبركاته، يسر إدارة جامع الحق إفادتكم بأنه قد تم تسجيل وتأكيد حجزكم في دار المناسبات وفق البيانات والتفاصيل الموضحة أدناه:
+                            %s
                           </p>
 
                           <!-- Booking Reference Card (Similar to Re-Sapori OTP / Order box) -->
@@ -278,7 +324,7 @@ public class MailService {
                         <td align="center" style="padding: 22px 30px; background-color: #060D1A; border-top: 1px solid #1E3A63; font-size: 11px; color: #8EA3BF; line-height: 1.6;">
                           <div style="color: #D4AF85; font-weight: 700; margin-bottom: 4px;">جامع الحق • الصرح الإيماني والمنارة المجتمعية</div>
                           <div>المنطقة السابعة — الموالح الجنوبية — ولاية السيب، سلطنة عمان</div>
-                          <div style="margin-top: 6px;">لأي استفسار يرجى مراسلتنا: <a href="mailto:marwanyasserhassan7@gmail.com" style="color: #FFE8B8; text-decoration: none;">marwanyasserhassan7@gmail.com</a></div>
+                          <div style="margin-top: 6px;">لأي استفسار يرجى مراسلتنا: <a href="mailto:%s" style="color: #FFE8B8; text-decoration: none;">%s</a></div>
                           <div style="margin-top: 8px; font-size: 10px; color: #52637A;">&copy; 2026 جامع الحق. جميع الحقوق محفوظة.</div>
                         </td>
                       </tr>
@@ -289,7 +335,9 @@ public class MailService {
             </body>
             </html>
             """.formatted(
-                customerName,
+                statusBadgeText,
+                greetingHeader,
+                greetingParagraph,
                 bookingCode,
                 occasionTitle,
                 notesRow,
@@ -299,7 +347,9 @@ public class MailService {
                 customerName,
                 phoneStr,
                 totalAmountStr,
-                currencyStr
+                currencyStr,
+                replyToEmail,
+                replyToEmail
         );
     }
 
