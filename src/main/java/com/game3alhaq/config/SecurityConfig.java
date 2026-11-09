@@ -62,6 +62,8 @@ public class SecurityConfig {
             "/api/v1/halls",
             "/api/v1/blackouts/**",
             "/api/v1/blackouts",
+            "/api/v1/staff/**",
+            "/api/v1/staff",
             "/api/v1/bookings/availability/**",
             "/api/v1/bookings/availability",
             "/api/v1/bookings/code/**",
