@@ -52,6 +52,8 @@ public final class BookingRequests {
         private Integer endHour;
 
         private String notes;
+
+        private String paymentReceiptImageUrl;
     }
 
     @Getter
@@ -97,6 +99,8 @@ public final class BookingRequests {
         private String notes;
 
         private Boolean skipPayment;
+
+        private String paymentReceiptImageUrl;
     }
 
     @Getter

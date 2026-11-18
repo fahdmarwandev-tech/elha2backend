@@ -91,6 +91,13 @@ public class Booking {
     @Builder.Default
     private String status = "PENDING_PAYMENT";
 
+    @Column(name = "order_status", length = 50)
+    @Builder.Default
+    private String orderStatus = "PENDING_PAYMENT";
+
+    @Column(name = "payment_receipt_image_url", length = 500)
+    private String paymentReceiptImageUrl;
+
     @Column(name = "payment_expires_at")
     private OffsetDateTime paymentExpiresAt;
 

@@ -13,3 +13,5 @@ databaseChangeLog:
       file: db/changelog/changes/06-enforce-aza-3days-dhuhr-maghrib.sql
   - include:
       file: db/changelog/changes/07-create-staff-emails-table.sql
+  - include:
+      file: db/changelog/changes/08-add-payment-receipt-and-order-status-to-bookings.sql

@@ -45,7 +45,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
           AND b.eventDate <= :end
           AND COALESCE(b.endDate, b.eventDate) >= :start
           AND (
-               b.status IN ('CONFIRMED', 'COMPLETED')
+               b.status IN ('CONFIRMED', 'COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
                OR (b.status = 'PENDING_PAYMENT' AND b.paymentExpiresAt > :now)
           )
     """)
@@ -62,7 +62,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
           AND b.eventDate <= :eventDate
           AND COALESCE(b.endDate, b.eventDate) >= :eventDate
           AND (
-               b.status IN ('CONFIRMED', 'COMPLETED')
+               b.status IN ('CONFIRMED', 'COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
                OR (b.status = 'PENDING_PAYMENT' AND b.paymentExpiresAt > :now)
           )
           AND (:startHour < (b.endHour + :bufferHours) AND (:endHour + :bufferHours) > b.startHour)

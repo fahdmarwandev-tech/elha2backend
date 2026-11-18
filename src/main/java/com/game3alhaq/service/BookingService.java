@@ -15,14 +15,21 @@ import com.game3alhaq.repository.HallRepository;
 import com.game3alhaq.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -36,6 +43,9 @@ public class BookingService {
     public static final int DHUHR_START_HOUR = 12;
     public static final int MAGHRIB_CUTOFF_HOUR = 18;
     public static final int AZA_DAYS_COUNT = 3;
+
+    @Value("${app.upload.dir:uploads}")
+    private String uploadDir;
 
     private final BookingRepository bookingRepository;
     private final HallRepository hallRepository;
@@ -58,9 +68,28 @@ public class BookingService {
         validateDateRangeAvailability(hall, req.getEventDate(), endDate, effectiveStartHour, effectiveEndHour);
         User user = resolveCurrentUser();
         Booking booking = initBookingFromRequest(hall, user, req, daysCount, endDate);
-        booking.setStatus("PENDING_PAYMENT");
-        booking.setPaymentExpiresAt(OffsetDateTime.now().plusMinutes(15));
+
+        boolean hasReceipt = req.getPaymentReceiptImageUrl() != null && !req.getPaymentReceiptImageUrl().isBlank();
+        if (hasReceipt) {
+            booking.setPaymentReceiptImageUrl(req.getPaymentReceiptImageUrl().trim());
+            booking.setStatus("PENDING_APPROVAL");
+            booking.setOrderStatus("PENDING_APPROVAL");
+            booking.setPaymentExpiresAt(null);
+        } else {
+            booking.setStatus("PENDING_PAYMENT");
+            booking.setOrderStatus("PENDING_PAYMENT");
+            booking.setPaymentExpiresAt(OffsetDateTime.now().plusMinutes(15));
+        }
+
         Booking saved = bookingRepository.save(booking);
+
+        if (hasReceipt) {
+            return new BookingInitiationResponse(
+                    enrichBookingResponse(saved, bookingMapper.toResponse(saved)),
+                    null,
+                    null);
+        }
+
         Payment payment = paymentService.createPayPalOrder(saved);
         return new BookingInitiationResponse(
                 enrichBookingResponse(saved, bookingMapper.toResponse(saved)),
@@ -81,9 +110,16 @@ public class BookingService {
         LocalDate endDate = req.getEventDate().plusDays(daysCount - 1L);
         validateDateRangeAvailability(hall, req.getEventDate(), endDate, effectiveStartHour, effectiveEndHour);
         Booking booking = initBookingFromAdmin(hall, req, daysCount, endDate);
+
         boolean skip = Boolean.TRUE.equals(req.getSkipPayment());
-        booking.setStatus(skip ? "CONFIRMED" : "PENDING_PAYMENT");
-        booking.setPaymentExpiresAt(skip ? null : OffsetDateTime.now().plusMinutes(15));
+        String initialStatus = skip ? "CONFIRMED" : "PENDING_PAYMENT";
+        if (req.getPaymentReceiptImageUrl() != null && !req.getPaymentReceiptImageUrl().isBlank()) {
+            booking.setPaymentReceiptImageUrl(req.getPaymentReceiptImageUrl().trim());
+            initialStatus = "PENDING_APPROVAL";
+        }
+        booking.setStatus(initialStatus);
+        booking.setOrderStatus(initialStatus);
+        booking.setPaymentExpiresAt(skip || "PENDING_APPROVAL".equals(initialStatus) ? null : OffsetDateTime.now().plusMinutes(15));
         Booking saved = bookingRepository.save(booking);
         handleAdminPayment(saved, skip);
         return enrichBookingResponse(saved, bookingMapper.toResponse(saved));
@@ -138,8 +174,71 @@ public class BookingService {
         String newStatus = req.getStatus().toUpperCase();
         validateStatusTransition(newStatus);
         booking.setStatus(newStatus);
+        booking.setOrderStatus(newStatus);
+        Booking saved = bookingRepository.save(booking);
+        if ("CONFIRMED".equals(newStatus) || "APPROVED".equals(newStatus)) {
+            try {
+                mailService.sendBookingConfirmation(saved);
+            } catch (Exception ex) {
+                log.warn("Could not send confirmation email for booking {}: {}", saved.getCode(), ex.getMessage());
+            }
+        }
+        return enrichBookingResponse(saved, bookingMapper.toResponse(saved));
+    }
+
+    @Transactional
+    public BookingResponse uploadPaymentReceipt(Long bookingId, MultipartFile file) throws IOException {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "id", bookingId));
+        return processReceiptUpload(booking, file);
+    }
+
+    @Transactional
+    public BookingResponse uploadPaymentReceiptByCode(String code, MultipartFile file) throws IOException {
+        Booking booking = bookingRepository.findByCode(code)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking", "code", code));
+        return processReceiptUpload(booking, file);
+    }
+
+    public String saveReceiptFile(MultipartFile file) throws IOException {
+        validateReceiptFile(file);
+        Path receiptsDir = Paths.get(uploadDir, "receipts").toAbsolutePath().normalize();
+        Files.createDirectories(receiptsDir);
+        String ext = getFileExtension(file.getOriginalFilename());
+        String filename = "receipt_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8) + ext;
+        Path targetPath = receiptsDir.resolve(filename);
+        Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+        return "/uploads/receipts/" + filename;
+    }
+
+    private BookingResponse processReceiptUpload(Booking booking, MultipartFile file) throws IOException {
+        String receiptUrl = saveReceiptFile(file);
+        booking.setPaymentReceiptImageUrl(receiptUrl);
+        booking.setStatus("PENDING_APPROVAL");
+        booking.setOrderStatus("PENDING_APPROVAL");
+        booking.setPaymentExpiresAt(null);
         Booking saved = bookingRepository.save(booking);
         return enrichBookingResponse(saved, bookingMapper.toResponse(saved));
+    }
+
+    private void validateReceiptFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("الملف المرفق فارغ");
+        }
+        if (file.getSize() > 10 * 1024 * 1024) {
+            throw new IllegalArgumentException("حجم الصورة يجب ألا يتجاوز 10 ميجابايت");
+        }
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("نوع الملف المرفق يجب أن يكون صورة (PNG, JPG, JPEG, WEBP)");
+        }
+    }
+
+    private String getFileExtension(String filename) {
+        if (filename == null || !filename.contains(".")) {
+            return ".jpg";
+        }
+        return filename.substring(filename.lastIndexOf("."));
     }
 
     @Transactional
@@ -245,7 +344,9 @@ public class BookingService {
                 .startHour(req.getStartHour()).endHour(req.getEndHour()).durationHours(duration)
                 .appliedBufferHours(hall.getBufferHours()).hourlyRate(hall.getHourlyRate())
                 .totalAmount(total)
-                .currency(hall.getCurrency()).notes(req.getNotes()).build();
+                .currency(hall.getCurrency()).notes(req.getNotes())
+                .paymentReceiptImageUrl(req.getPaymentReceiptImageUrl())
+                .build();
     }
 
     private Booking initBookingFromAdmin(
@@ -261,7 +362,9 @@ public class BookingService {
                 .startHour(req.getStartHour()).endHour(req.getEndHour()).durationHours(duration)
                 .appliedBufferHours(hall.getBufferHours()).hourlyRate(hall.getHourlyRate())
                 .totalAmount(total)
-                .currency(hall.getCurrency()).notes(req.getNotes()).build();
+                .currency(hall.getCurrency()).notes(req.getNotes())
+                .paymentReceiptImageUrl(req.getPaymentReceiptImageUrl())
+                .build();
     }
 
     private User resolveCurrentUser() {
@@ -275,7 +378,10 @@ public class BookingService {
     }
 
     private void validateStatusTransition(String status) {
-        List<String> allowed = List.of("PENDING_PAYMENT", "CONFIRMED", "COMPLETED", "CANCELLED", "EXPIRED");
+        List<String> allowed = List.of(
+                "PENDING_PAYMENT", "PENDING_APPROVAL", "PENDING_CONFIRMATION",
+                "CONFIRMED", "APPROVED", "COMPLETED", "CANCELLED", "REJECTED", "EXPIRED"
+        );
         if (!allowed.contains(status)) {
             throw new IllegalArgumentException("Invalid booking status: " + status);
         }
@@ -325,6 +431,8 @@ public class BookingService {
         } else {
             resp.setFormattedTimeRange("من " + formatHourAr(sh) + " إلى " + formatHourAr(eh));
         }
+        resp.setOrderStatus(booking.getOrderStatus() != null ? booking.getOrderStatus() : booking.getStatus());
+        resp.setPaymentReceiptImageUrl(booking.getPaymentReceiptImageUrl());
         return resp;
     }
 

@@ -43,6 +43,8 @@ public final class BookingResponses {
         private String currency;
         private String notes;
         private String status;
+        private String orderStatus;
+        private String paymentReceiptImageUrl;
         private OffsetDateTime paymentExpiresAt;
         private Long paymentId;
         private String paypalOrderId;

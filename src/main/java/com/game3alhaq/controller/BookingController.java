@@ -12,13 +12,17 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/bookings")
@@ -33,6 +37,30 @@ public class BookingController {
     public ResponseEntity<BookingInitiationResponse> createBooking(
             @Valid @RequestBody CreateBookingRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createBooking(request));
+    }
+
+    @PostMapping(value = "/upload-receipt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload payment receipt image file (Public/User)")
+    public ResponseEntity<Map<String, String>> uploadReceipt(
+            @RequestParam("file") MultipartFile file) throws IOException {
+        String receiptUrl = bookingService.saveReceiptFile(file);
+        return ResponseEntity.ok(Map.of("url", receiptUrl, "receiptUrl", receiptUrl));
+    }
+
+    @PostMapping(value = "/{id}/receipt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload and attach payment receipt image to a booking by ID")
+    public ResponseEntity<BookingResponse> uploadBookingReceipt(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        return ResponseEntity.ok(bookingService.uploadPaymentReceipt(id, file));
+    }
+
+    @PostMapping(value = "/code/{code}/receipt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload and attach payment receipt image to a booking by Code")
+    public ResponseEntity<BookingResponse> uploadBookingReceiptByCode(
+            @PathVariable String code,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        return ResponseEntity.ok(bookingService.uploadPaymentReceiptByCode(code, file));
     }
 
     @GetMapping("/code/{code}")

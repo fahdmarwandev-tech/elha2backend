@@ -73,6 +73,9 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_POST_ENDPOINTS = {
             "/api/v1/bookings",
+            "/api/v1/bookings/upload-receipt",
+            "/api/v1/bookings/*/receipt",
+            "/api/v1/bookings/code/*/receipt",
             "/api/v1/payments/paypal/**"
     };
 
