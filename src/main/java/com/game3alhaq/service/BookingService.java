@@ -72,29 +72,17 @@ public class BookingService {
         boolean hasReceipt = req.getPaymentReceiptImageUrl() != null && !req.getPaymentReceiptImageUrl().isBlank();
         if (hasReceipt) {
             booking.setPaymentReceiptImageUrl(req.getPaymentReceiptImageUrl().trim());
-            booking.setStatus("PENDING_APPROVAL");
-            booking.setOrderStatus("PENDING_APPROVAL");
-            booking.setPaymentExpiresAt(null);
-        } else {
-            booking.setStatus("PENDING_PAYMENT");
-            booking.setOrderStatus("PENDING_PAYMENT");
-            booking.setPaymentExpiresAt(OffsetDateTime.now().plusMinutes(15));
         }
+        booking.setStatus("PENDING_APPROVAL");
+        booking.setOrderStatus("PENDING_APPROVAL");
+        booking.setPaymentExpiresAt(null);
 
         Booking saved = bookingRepository.save(booking);
 
-        if (hasReceipt) {
-            return new BookingInitiationResponse(
-                    enrichBookingResponse(saved, bookingMapper.toResponse(saved)),
-                    null,
-                    null);
-        }
-
-        Payment payment = paymentService.createPayPalOrder(saved);
         return new BookingInitiationResponse(
                 enrichBookingResponse(saved, bookingMapper.toResponse(saved)),
-                payment.getPaypalOrderId(),
-                payment.getApprovalUrl());
+                null,
+                null);
     }
 
     @Transactional
@@ -126,10 +114,8 @@ public class BookingService {
     }
 
     private void handleAdminPayment(Booking saved, boolean skip) {
-        if (skip) {
+        if (skip || "CONFIRMED".equals(saved.getStatus())) {
             mailService.sendBookingConfirmation(saved);
-        } else {
-            paymentService.createPayPalOrder(saved);
         }
     }
 

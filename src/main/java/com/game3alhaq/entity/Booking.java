@@ -95,7 +95,7 @@ public class Booking {
     @Builder.Default
     private String orderStatus = "PENDING_PAYMENT";
 
-    @Column(name = "payment_receipt_image_url", length = 500)
+    @Column(name = "payment_receipt_image_url", columnDefinition = "TEXT")
     private String paymentReceiptImageUrl;
 
     @Column(name = "payment_expires_at")
