@@ -58,7 +58,8 @@ class TimeSlotServiceTest {
 
     @Test
     void testAvailabilityWithBookingAndBuffer() {
-        LocalDate eventDate = LocalDate.of(2026, 11, 15);
+        int futureYear = LocalDate.now().plusYears(1).getYear();
+        LocalDate eventDate = LocalDate.of(futureYear, 11, 15);
         Booking booking = Booking.builder()
                 .id(10L)
                 .code("DAR-TEST01")
@@ -75,7 +76,7 @@ class TimeSlotServiceTest {
         when(blackoutRepository.findAllByHallIdAndBlackoutDateBetween(eq(1L), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(List.of());
 
-        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, 2026, 11);
+        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, futureYear, 11);
 
         assertNotNull(response);
         assertEquals(30, response.getDays().size());
@@ -97,7 +98,8 @@ class TimeSlotServiceTest {
 
     @Test
     void testFullDayBlackout() {
-        LocalDate blackoutDate = LocalDate.of(2026, 11, 20);
+        int futureYear = LocalDate.now().plusYears(1).getYear();
+        LocalDate blackoutDate = LocalDate.of(futureYear, 11, 20);
         HallBlackout blackout = HallBlackout.builder()
                 .id(1L)
                 .hall(testHall)
@@ -113,7 +115,7 @@ class TimeSlotServiceTest {
         when(blackoutRepository.findAllByHallIdAndBlackoutDateBetween(eq(1L), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(List.of(blackout));
 
-        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, 2026, 11);
+        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, futureYear, 11);
 
         DayAvailabilityResponse day20 = response.getDays().stream()
                 .filter(d -> d.getDayNumber() == 20)
@@ -130,7 +132,8 @@ class TimeSlotServiceTest {
     void testThreeDayAzaBookingMarksAllThreeDays() {
         testHall.setOpenHour(0);
         testHall.setCloseHour(24);
-        LocalDate startDate = LocalDate.of(2026, 11, 10);
+        int futureYear = LocalDate.now().plusYears(1).getYear();
+        LocalDate startDate = LocalDate.of(futureYear, 11, 10);
         Booking azaBooking = Booking.builder()
                 .id(25L)
                 .code("DAR-AZA003")
@@ -151,11 +154,15 @@ class TimeSlotServiceTest {
         when(blackoutRepository.findAllByHallIdAndBlackoutDateBetween(eq(1L), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(List.of());
 
-        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, 2026, 11);
+        HourlyAvailabilityResponse response = timeSlotService.getMonthlyAvailability(1L, futureYear, 11);
 
         assertEquals(12, response.getDhuhrHour());
         assertEquals(18, response.getMaghribHour());
-        List<String> expectedThreeDays = List.of("2026-11-10", "2026-11-11", "2026-11-12");
+        List<String> expectedThreeDays = List.of(
+                futureYear + "-11-10",
+                futureYear + "-11-11",
+                futureYear + "-11-12"
+        );
 
         int expectedIdx = 1;
         for (int dayNum : List.of(10, 11, 12)) {
@@ -187,9 +194,10 @@ class TimeSlotServiceTest {
             assertEquals("من 12:00 ظهراً (الظهر) إلى 06:00 مساءً (المغرب)", summary.getFormattedTimeRange());
         }
 
-        // Verify days 6 and 7 (before today Nov 8, 2026) are marked FULLY_BOOKED / BLACKOUT
+        // Verify past days (in past year 2025) are marked FULLY_BOOKED / BLACKOUT
+        HourlyAvailabilityResponse pastResponse = timeSlotService.getMonthlyAvailability(1L, 2025, 11);
         for (int pastDayNum : List.of(6, 7)) {
-            DayAvailabilityResponse pastDay = response.getDays().stream()
+            DayAvailabilityResponse pastDay = pastResponse.getDays().stream()
                     .filter(day -> day.getDayNumber() == pastDayNum)
                     .findFirst()
                     .orElseThrow();
