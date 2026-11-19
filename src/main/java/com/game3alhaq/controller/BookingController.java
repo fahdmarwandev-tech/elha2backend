@@ -44,7 +44,11 @@ public class BookingController {
     public ResponseEntity<Map<String, String>> uploadReceipt(
             @RequestParam("file") MultipartFile file) throws IOException {
         String receiptUrl = bookingService.saveReceiptFile(file);
-        return ResponseEntity.ok(Map.of("url", receiptUrl, "receiptUrl", receiptUrl));
+        return ResponseEntity.ok(Map.of(
+                "url", receiptUrl,
+                "receiptUrl", receiptUrl,
+                "imageUrl", receiptUrl
+        ));
     }
 
     @PostMapping(value = "/{id}/receipt", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
