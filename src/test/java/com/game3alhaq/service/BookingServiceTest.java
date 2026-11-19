@@ -72,7 +72,7 @@ class BookingServiceTest {
     }
 
     @Test
-    @DisplayName("Successfully initiate booking with PayPal checkout")
+    @DisplayName("Successfully initiate booking with PENDING_APPROVAL status")
     void createBooking_Success() {
         when(hallRepository.findById(1L)).thenReturn(Optional.of(hall));
         when(blackoutRepository.findAllByHallIdAndBlackoutDate(eq(1L), any(LocalDate.class)))
@@ -83,22 +83,19 @@ class BookingServiceTest {
 
         Booking savedBooking = Booking.builder()
                 .id(100L).code("DAR-A1B2C3").hall(hall).totalAmount(BigDecimal.valueOf(30.0))
-                .status("PENDING_PAYMENT").build();
+                .status("PENDING_APPROVAL").orderStatus("PENDING_APPROVAL").build();
         when(bookingRepository.save(any(Booking.class))).thenReturn(savedBooking);
 
-        Payment payment = Payment.builder()
-                .id(200L).paypalOrderId("ORDER-123").approvalUrl("https://paypal.com/approve").build();
-        when(paymentService.createPayPalOrder(savedBooking)).thenReturn(payment);
-
-        BookingResponse response = BookingResponse.builder().id(100L).code("DAR-A1B2C3").build();
+        BookingResponse response = BookingResponse.builder().id(100L).code("DAR-A1B2C3").status("PENDING_APPROVAL").build();
         when(bookingMapper.toResponse(savedBooking)).thenReturn(response);
 
         BookingInitiationResponse result = bookingService.createBooking(createRequest);
 
         assertNotNull(result);
-        assertEquals("ORDER-123", result.getPaypalOrderId());
-        assertEquals("https://paypal.com/approve", result.getApprovalUrl());
-        verify(paymentService, times(1)).createPayPalOrder(savedBooking);
+        assertNull(result.getPaypalOrderId());
+        assertNull(result.getApprovalUrl());
+        assertEquals("PENDING_APPROVAL", result.getBooking().getStatus());
+        verify(paymentService, never()).createPayPalOrder(any());
     }
 
     @Test
@@ -245,7 +242,7 @@ class BookingServiceTest {
     void createBooking_AzaSpansThreeDays_Success() {
         hall.setOpenHour(0);
         hall.setCloseHour(24);
-        LocalDate start = LocalDate.of(2026, 11, 10);
+        LocalDate start = LocalDate.now().plusDays(10);
         createRequest.setBookingType("3aza");
         createRequest.setEventDate(start);
         createRequest.setStartHour(12);
@@ -259,9 +256,6 @@ class BookingServiceTest {
         when(bookingRepository.findByCode(anyString())).thenReturn(Optional.empty());
         when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Payment payment = Payment.builder()
-                .id(201L).paypalOrderId("ORDER-AZA").approvalUrl("https://paypal.com/aza").build();
-        when(paymentService.createPayPalOrder(any(Booking.class))).thenReturn(payment);
         when(bookingMapper.toResponse(any(Booking.class))).thenAnswer(inv -> {
             Booking b = inv.getArgument(0);
             return BookingResponse.builder()
@@ -290,8 +284,8 @@ class BookingServiceTest {
     void createBooking_AzaConflictsWithKatbKetabOnSharedHall_ThrowsException() {
         hall.setOpenHour(0);
         hall.setCloseHour(24);
-        LocalDate day1 = LocalDate.of(2026, 11, 10);
-        LocalDate day2 = LocalDate.of(2026, 11, 11);
+        LocalDate day1 = LocalDate.now().plusDays(10);
+        LocalDate day2 = day1.plusDays(1);
         createRequest.setBookingType("3aza");
         createRequest.setEventDate(day1);
         createRequest.setStartHour(12);
