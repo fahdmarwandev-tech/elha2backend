@@ -188,13 +188,22 @@ public class BookingService {
 
     public String saveReceiptFile(MultipartFile file) throws IOException {
         validateReceiptFile(file);
-        Path receiptsDir = Paths.get(uploadDir, "receipts").toAbsolutePath().normalize();
-        Files.createDirectories(receiptsDir);
-        String ext = getFileExtension(file.getOriginalFilename());
-        String filename = "receipt_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8) + ext;
-        Path targetPath = receiptsDir.resolve(filename);
-        Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
-        return "/uploads/receipts/" + filename;
+        try {
+            Path receiptsDir = Paths.get(uploadDir, "receipts").toAbsolutePath().normalize();
+            Files.createDirectories(receiptsDir);
+            String ext = getFileExtension(file.getOriginalFilename());
+            String filename = "receipt_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8) + ext;
+            Path targetPath = receiptsDir.resolve(filename);
+            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+            return "/uploads/receipts/" + filename;
+        } catch (Exception ex) {
+            log.warn("Filesystem write unavailable for receipt ({}), encoding as Base64 data URL", ex.getMessage());
+            String mimeType = (file.getContentType() != null && file.getContentType().startsWith("image/"))
+                    ? file.getContentType()
+                    : "image/png";
+            String base64 = Base64.getEncoder().encodeToString(file.getBytes());
+            return "data:" + mimeType + ";base64," + base64;
+        }
     }
 
     private BookingResponse processReceiptUpload(Booking booking, MultipartFile file) throws IOException {
